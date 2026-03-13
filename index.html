@@ -4,6 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Star Map</title>
+  <script src="stuquery.min.js"></script>
+  <script src="virtualsky.min.js"></script>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -14,34 +16,21 @@
       background: black;
     }
 
-    /* LAYER 1: VirtualSky iframe — fills the whole page */
     #starmap {
       position: absolute;
       top: 0; left: 0;
       width: 100%;
       height: 100%;
-      border: none;
       z-index: 1;
     }
 
-    /* LAYER 2: Transparent overlay — captures mouse movement,
-       passes pointer-events through to anything underneath */
-    #mouse-capture {
-      position: absolute;
-      top: 0; left: 0;
-      width: 100%;
-      height: 100%;
-      z-index: 2;
-      background: transparent;
-    }
-
-    /* LAYER 3: Your content — pointer-events:none so mouse still reaches layer 2 */
+    /* Overlay: pointer-events none so mouse falls through to canvas */
     #overlay {
       position: absolute;
       top: 0; left: 0;
       width: 100%;
       height: 100%;
-      z-index: 3;
+      z-index: 2;
       pointer-events: none;
     }
 
@@ -57,7 +46,6 @@
       pointer-events: none;
     }
 
-    /* Add class="clickable" to any child element that needs to receive clicks */
     .clickable {
       pointer-events: auto;
       cursor: pointer;
@@ -66,64 +54,105 @@
 </head>
 <body>
 
-  <!-- LAYER 1: VirtualSky via official iframe embed (Kalispell, MT) -->
-  <iframe
-    id="starmap"
-    src="https://slowe.github.io/VirtualSky/embed?projection=gnomic&latitude=48.379471&longitude=-114.24657&live=true&scalestars=2&az=180&mouse=false&keyboard=false&gradient=true&cardinalpoints=true"
-    scrolling="no"
-    allowfullscreen>
-  </iframe>
+  <div id="starmap"></div>
 
-  <!-- LAYER 2: Captures mouse position to drive sky scroll -->
-  <div id="mouse-capture"></div>
-
-  <!-- LAYER 3: Your overlay content here -->
   <div id="overlay">
     <div id="content">
-      <!-- ✏️ Add your text, images, logos etc. here -->
+      <!-- ✏️ Your content here -->
     </div>
   </div>
 
   <script>
-    const iframe = document.getElementById('starmap');
-    const capture = document.getElementById('mouse-capture');
+    S(document).ready(function () {
 
-    let mouseX = window.innerWidth  / 2;
-    let mouseY = window.innerHeight / 2;
+      var planetarium = S.virtualsky({
+        id: 'starmap',
+        projection: 'stereo',
+        latitude: 48.379471,
+        longitude: -114.24657,
+        live: true,
+        scalestars: 2,
+        az: 180,
+        mouse: true,   // keep mouse enabled — we drive it via synthetic events
+        keyboard: false
+      });
 
-    let az  = 180;
-    let alt = 45;
+      // Get the canvas element VirtualSky draws into
+      function getCanvas() {
+        return document.querySelector('#starmap canvas');
+      }
 
-    capture.addEventListener("mousemove", function (e) {
-      mouseX = e.clientX;
-      mouseY = e.clientY;
+      var lastX = null;
+      var lastY = null;
+      var isDragging = false;
+
+      // Helper to fire a pointer/mouse event on the canvas
+      function fireEvent(canvas, type, x, y) {
+        var evt = new MouseEvent(type, {
+          bubbles: true,
+          cancelable: true,
+          clientX: x,
+          clientY: y
+        });
+        canvas.dispatchEvent(evt);
+      }
+
+      document.addEventListener('mousemove', function (e) {
+        var canvas = getCanvas();
+        if (!canvas) return;
+
+        var cx = window.innerWidth  / 2;
+        var cy = window.innerHeight / 2;
+
+        var dx = e.clientX - cx;
+        var dy = e.clientY - cy;
+
+        // Dead zone: don't drag if cursor is near center
+        var deadZone = 30;
+        var dist = Math.sqrt(dx * dx + dy * dy);
+
+        if (dist < deadZone) {
+          // Release drag when back near center
+          if (isDragging) {
+            fireEvent(canvas, 'mouseup', e.clientX, e.clientY);
+            isDragging = false;
+            lastX = null;
+            lastY = null;
+          }
+          return;
+        }
+
+        // Scale drag speed by distance from center
+        var speed = 0.3;
+        var targetX = cx + dx * speed;
+        var targetY = cy + dy * speed;
+
+        if (!isDragging) {
+          // Start a drag from the center of the screen
+          fireEvent(canvas, 'mousedown', cx, cy);
+          isDragging = true;
+          lastX = cx;
+          lastY = cy;
+        }
+
+        // Continue the drag toward where the cursor is pointing
+        fireEvent(canvas, 'mousemove', targetX, targetY);
+        lastX = targetX;
+        lastY = targetY;
+      });
+
+      // Release drag if cursor leaves the window
+      document.addEventListener('mouseleave', function () {
+        var canvas = getCanvas();
+        if (canvas && isDragging) {
+          fireEvent(canvas, 'mouseup', lastX || 0, lastY || 0);
+          isDragging = false;
+          lastX = null;
+          lastY = null;
+        }
+      });
+
     });
-
-    function animate() {
-      const cx = window.innerWidth  / 2;
-      const cy = window.innerHeight / 2;
-
-      const dx = (mouseX - cx) / cx;   // -1 (left) to 1 (right)
-      const dy = (mouseY - cy) / cy;   // -1 (top)  to 1 (bottom)
-
-      const speed = 0.15;
-
-      az  += dx * speed;
-      alt -= dy * speed;
-
-      az  = (az + 360) % 360;
-      alt = Math.max(10, Math.min(80, alt));
-
-      // Send the updated az/alt into the iframe via postMessage
-      iframe.contentWindow.postMessage({
-        az:  az,
-        alt: alt
-      }, '*');
-
-      requestAnimationFrame(animate);
-    }
-
-    animate();
   </script>
 
 </body>
