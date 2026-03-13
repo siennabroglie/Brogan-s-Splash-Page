@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Star Map</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: black;
+    }
+
+    #starmap {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%;
+      height: 100%;
+      border: none;
+      z-index: 1;
+    }
+
+    #overlay {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 2;
+      background: transparent;
+    }
+
+#typewriter {
+  position: absolute;
+  top: 5%;
+  left: 50%;
+  transform: translateX(-50%);
+  font-family: 'Times New Roman', Times, serif;
+  font-size: 21px;
+  color: white;
+  line-height: .6;
+  white-space: pre-wrap;
+  max-width: 90%;
+  width: 90%;
+  text-align: left;
+  z-index: 3;
+  pointer-events: none;
+  text-shadow: 0 2px 12px rgba(0,0,0,0.9), 0 0 30px rgba(0,0,0,0.6);
+}
+
+    #cursor {
+      display: inline-block;
+      width: 2px;
+      height: 1.2em;
+      background: white;
+      margin-left: 2px;
+      vertical-align: text-bottom;
+      animation: blink 0.7s step-end infinite;
+    }
+
+    @keyframes blink {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0; }
+    }
+  </style>
+</head>
+<body>
+
+  <iframe
+    id="starmap"
+    scrolling="no"
+    frameborder="0"
+    marginheight="0"
+    marginwidth="0"
+    allowtransparency="true"
+    src="https://virtualsky.lco.global/embed/index.html?longitude=-114.24657&latitude=48.379471&projection=gnomic&meteorshowers=true&scalestars=2&live=true&az=81.04813973442242">
+  </iframe>
+
+  <div id="overlay"></div>
+
+  <div id="typewriter">
+    <span id="text"></span><span id="cursor"></span>
+  </div>
+
+  <script>
+    // ✏️ EDIT YOUR TEXT HERE — use \n for line breaks
+    const fullText = `We believe in barns not just as buildings, but as metaphors.\n
+Where stories are stored in hay bales,\n
+Donor moments hang from rusted hooks,\n
+Every ladder leads to a forgotten game,\n
+Every storm cellar hides a truth too soggy to explain.\n
+\n
+The Mind Barn is not a brand.\n
+It’s a barn door left open.\n
+Ideas escape. Visitors wander.\n
+Some paint the walls. Some fix the roof.\n
+Some just sit in the loft and listen.\n
+\n
+There is mystery in the rafters.\n
+There is memory in the mudroom.\n
+\n
+This is not a website.\n
+This is a living structure.\n
+A place to play, archive, remember, and repair.\n
+\n
+WELCOME TO THE MIND BARN.\n
+DON’T FORGET TO CHECK THE ATTIC.`;
+
+    const textEl        = document.getElementById('text');
+    const baseSpeed     = 60;
+    const speedVariance = 20;
+    const pauseChance   = 0.08;
+    const pauseDuration = [200, 400];
+    let index = 0;
+
+    function randomBetween(min, max) {
+      return Math.random() * (max - min) + min;
+    }
+
+    function typeNext() {
+      if (index >= fullText.length) return;
+      const char = fullText[index];
+      textEl.textContent += char;
+      index++;
+
+      let delay = baseSpeed + randomBetween(0, speedVariance);
+      if ('.!?'.includes(char))  delay += randomBetween(300, 600);
+      if (',;:'.includes(char))  delay += randomBetween(100, 300);
+      if (Math.random() < pauseChance) {
+        delay += randomBetween(pauseDuration[0], pauseDuration[1]);
+      }
+      setTimeout(typeNext, delay);
+    }
+
+    setTimeout(typeNext, 800);
+
+    // STAR MAP PANNING
+    const starmap  = document.getElementById('starmap');
+    const overlay  = document.getElementById('overlay');
+    let lastUpdate = 0;
+    const throttleMs = 200;
+
+    overlay.addEventListener('mousemove', (event) => {
+      const now = Date.now();
+      if (now - lastUpdate < throttleMs) return;
+      lastUpdate = now;
+
+      const xPercent = event.clientX / window.innerWidth;
+      const yPercent = event.clientY / window.innerHeight;
+
+      const az  = (xPercent * 360).toFixed(4);
+      const alt = (90 - yPercent * 90).toFixed(4);
+
+      starmap.src = `https://virtualsky.lco.global/embed/index.html?longitude=-114.24657&latitude=48.379471&projection=gnomic&meteorshowers=true&scalestars=2&live=true&az=${az}&alt=${alt}`;
+    });
+  </script>
+
+</body>
+</html>
