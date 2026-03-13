@@ -39,6 +39,7 @@
   position: absolute;
   top: 15%;
   left: 50%;
+  transform: translateX(-50%);
   font-family: 'Times New Roman', Times, serif;
   font-size: 21px;
   color: white;
@@ -51,6 +52,7 @@
   pointer-events: none;
   text-shadow: 0 2px 12px rgba(0,0,0,0.9), 0 0 30px rgba(0,0,0,0.6);
 }
+
 
     #cursor {
       display: inline-block;
@@ -150,31 +152,37 @@ DON’T FORGET TO CHECK THE ATTIC.`;
     setTimeout(typeNext, 800);
 
 // SMOOTH SKY DRIFT
-let mouseX = window.innerWidth/2;
-let mouseY = window.innerHeight/2;
+const overlay = document.getElementById('overlay');
 
-overlay.addEventListener('mousemove',(e)=>{
+let mouseX = window.innerWidth / 2;
+let mouseY = window.innerHeight / 2;
+
+overlay.addEventListener('mousemove', (e) => {
   mouseX = e.clientX;
   mouseY = e.clientY;
 });
 
 function animate(){
 
-  const cx = window.innerWidth/2;
-  const cy = window.innerHeight/2;
+  if(!planetarium) {
+    requestAnimationFrame(animate);
+    return;
+  }
 
-  const dx = (mouseX - cx)/cx;
-  const dy = (mouseY - cy)/cy;
+  const cx = window.innerWidth / 2;
+  const cy = window.innerHeight / 2;
 
-  const speed = 0.15;
+  const dx = (mouseX - cx) / cx;
+
+  const speed = 0.05;
 
   planetarium.az += dx * speed;
 
   requestAnimationFrame(animate);
-
 }
 
 animate();
+
 
 
   </script>
