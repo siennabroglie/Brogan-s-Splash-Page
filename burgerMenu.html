@@ -11,6 +11,8 @@
       background: transparent;
       font-family: 'Times New Roman', Times, serif;
       overflow: hidden;
+      margin: 0;
+      padding: 0;
     }
 
     #click-catcher {
@@ -23,15 +25,10 @@
 
     /* Panel — clips everything inside it, grows on open */
     #menu-panel {
-      position: fixed;
-      top: 16px;
-      left: 16px;
-      z-index: 100;
+      position: relative;
       background: white;
       cursor: pointer;
-      /* width fits burger + label */
       width: 240px;
-      /* height starts just tall enough to show the stacked burger */
       height: 72px;
       overflow: hidden;
       transition: height 0.6s cubic-bezier(0.4, 0, 0.2, 1);
