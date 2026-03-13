@@ -9,23 +9,92 @@
     html, body { width: 100%; height: 100%; overflow: hidden; background: black; }
     canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; }
     #overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 2; pointer-events: none; }
-    #content {
-      position: absolute; top: 10%; left: 5%;
-      color: white; font-family: 'Times New Roman', Times, serif;
-      font-size: 21px; line-height: 1.6;
+
+    /* ── Shared text styles ── */
+    .col {
+      position: absolute;
+      color: white;
+      font-family: 'Times New Roman', Times, serif;
+      font-size: 21px;
+      line-height: 1.6;
       text-shadow: 0 2px 12px rgba(0,0,0,0.9);
       pointer-events: none;
+      white-space: pre-wrap;
     }
-    .clickable { pointer-events: auto; cursor: pointer; }
+
+    /* ── Desktop / tablet (≥768px): two columns ── */
+    #col1 {
+      top: 10%;
+      left: 5%;
+      width: 38%;
+    }
+    #col2 {
+      top: 10%;
+      left: 50%;
+      width: 38%;
+      display: none; /* hidden until col1 is full */
+    }
+
+    /* ── Phone (<768px): single scrolling column ── */
+    #phone-content {
+      position: absolute;
+      left: 5%;
+      width: 90%;
+      color: white;
+      font-family: 'Times New Roman', Times, serif;
+      font-size: 16px;
+      line-height: 1.6;
+      text-shadow: 0 2px 12px rgba(0,0,0,0.9);
+      pointer-events: none;
+      white-space: pre-wrap;
+      display: none;
+    }
+
+    /* ── Link lines ── */
+    .link-line {
+      font-weight: bold;
+      color: #f95921;
+      pointer-events: auto;
+      cursor: pointer;
+      text-decoration: none;
+      display: block;
+    }
+    .link-line:hover { text-decoration: underline; }
+
+    /* ── Blinking cursor ── */
+    #cursor {
+      display: inline-block;
+      width: 2px;
+      height: 1.2em;
+      background: white;
+      margin-left: 2px;
+      vertical-align: text-bottom;
+      animation: blink 0.7s step-end infinite;
+    }
+    @keyframes blink {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0; }
+    }
+
+    /* ── Phone overrides ── */
+    @media (max-width: 767px) {
+      #col1, #col2 { display: none !important; }
+      #phone-content { display: block; }
+    }
+    @media (min-width: 768px) {
+      #phone-content { display: none !important; }
+    }
   </style>
 </head>
 <body>
 
 <canvas id="sky"></canvas>
 <div id="overlay">
-  <div id="content">
-    <!-- ✏️ Your content here -->
-  </div>
+  <!-- Desktop / tablet: two columns -->
+  <div id="col1" class="col"><span id="text1"></span><span id="cursor"></span></div>
+  <div id="col2" class="col"><span id="text2"></span></div>
+  <!-- Phone: single scrolling column -->
+  <div id="phone-content" class="col"><span id="text-phone"></span><span id="cursor-phone" style="display:inline-block;width:2px;height:1.2em;background:white;margin-left:2px;vertical-align:text-bottom;animation:blink 0.7s step-end infinite;"></span></div>
 </div>
 
 <script>
@@ -374,6 +443,228 @@ function draw() {
 recomputeStars();
 lastCalcTime = Date.now();
 draw();
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TYPEWRITER
+// ─────────────────────────────────────────────────────────────────────────────
+const IS_PHONE = window.innerWidth < 768;
+
+// Text split: body text | link lines (last 2)
+const bodyText =
+`We believe in barns not just as buildings, but as metaphors.
+
+Where stories are stored in hay bales,
+Donor moments hang from rusted hooks,
+Every ladder leads to a forgotten game,
+Every storm cellar hides a truth too soggy to explain.
+
+The Mind Barn is not a brand.
+It's a barn door left open.
+Ideas escape. Visitors wander.
+Some paint the walls. Some fix the roof.
+Some just sit in the loft and listen.
+
+There is mystery in the rafters.
+There is memory in the mudroom.
+
+This is not a website.
+This is a living structure.
+A place to play, archive, remember, and repair.
+
+`;
+
+const linkLines = [
+  { text: 'WELCOME TO THE MIND BARN.', url: 'YOUR_URL_HERE' },
+  { text: "DON'T FORGET TO CHECK THE ATTIC.", url: 'YOUR_URL_HERE' }
+];
+
+const fullText = bodyText + linkLines.map(l => l.text).join('\n');
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+const baseSpeed     = 55;
+const speedVariance = 20;
+const pauseChance   = 0.08;
+const pauseDuration = [200, 400];
+
+function randomBetween(min, max) { return Math.random() * (max - min) + min; }
+
+// Append link lines as styled <a> elements to a container
+function appendLinkLines(container) {
+  linkLines.forEach(l => {
+    const a = document.createElement('a');
+    a.className   = 'link-line';
+    a.textContent = l.text;
+    a.href        = l.url;
+    a.target      = '_blank';
+    container.appendChild(a);
+  });
+}
+
+// ── Skip-to-end on click/tap ──────────────────────────────────────────────────
+let finished = false;
+
+function skipToEnd() {
+  if (finished) return;
+  finished = true;
+
+  if (IS_PHONE) {
+    const ph = document.getElementById('text-phone');
+    const cp = document.getElementById('cursor-phone');
+    ph.textContent = bodyText;
+    appendLinkLines(ph.parentNode);
+    if (cp) cp.remove();
+    // keep scroll position correct
+    adjustPhoneScroll();
+  } else {
+    // Fill whichever column is active, hide cursor
+    const t1 = document.getElementById('text1');
+    const t2 = document.getElementById('text2');
+    const cur = document.getElementById('cursor');
+    const col2 = document.getElementById('col2');
+
+    t1.textContent = bodyText;
+    // Check if col1 overflows
+    setTimeout(() => {
+      if (col1Overflows()) {
+        splitIntoColumns();
+      } else {
+        appendLinkLines(t1.parentNode);
+      }
+      if (cur) cur.remove();
+    }, 50);
+  }
+}
+
+document.addEventListener('click',     skipToEnd);
+document.addEventListener('touchstart', skipToEnd, { passive: true });
+
+// ── DESKTOP / TABLET ─────────────────────────────────────────────────────────
+if (!IS_PHONE) {
+  const col1El  = document.getElementById('col1');
+  const col2El  = document.getElementById('col2');
+  const text1El = document.getElementById('text1');
+  const text2El = document.getElementById('text2');
+  const cursorEl = document.getElementById('cursor');
+
+  const TOP_PCT    = 0.10;
+  const BOTTOM_PCT = 0.90;
+
+  col1El.style.top = (window.innerHeight * TOP_PCT) + 'px';
+  col2El.style.top = (window.innerHeight * TOP_PCT) + 'px';
+
+  function col1Overflows() {
+    const maxBottom = window.innerHeight * BOTTOM_PCT;
+    return col1El.getBoundingClientRect().bottom > maxBottom;
+  }
+
+  // Once col1 is full: freeze its text, move overflow to col2
+  function splitIntoColumns() {
+    const allText  = text1El.textContent;
+    const words    = allText.split(' ');
+    col2El.style.display = 'block';
+
+    // Binary search for split point
+    let lo = 0, hi = words.length;
+    while (lo < hi - 1) {
+      const mid = Math.floor((lo + hi) / 2);
+      text1El.textContent = words.slice(0, mid).join(' ');
+      if (col1Overflows()) hi = mid; else lo = mid;
+    }
+    text2El.textContent = words.slice(lo).join(' ');
+    appendLinkLines(col2El);
+
+    // Move cursor to col2
+    col2El.appendChild(cursorEl);
+  }
+
+  let index = 0;
+  let inCol2 = false;
+
+  function typeNextDesktop() {
+    if (finished) return;
+    if (index >= fullText.length) {
+      // Done — append link lines
+      if (!inCol2) {
+        appendLinkLines(col1El);
+      } else {
+        appendLinkLines(col2El);
+      }
+      finished = true;
+      return;
+    }
+
+    const char = fullText[index];
+    text1El.textContent += char;
+    index++;
+
+    // After each newline check if col1 has overflowed
+    if (char === '\n' && !inCol2 && col1Overflows()) {
+      inCol2 = true;
+      splitIntoColumns();
+      // From here, remaining text types into col2
+      // Reassign typing target
+      typeNextDesktop._target = text2El;
+      col2El.style.display = 'block';
+    }
+
+    let delay = baseSpeed + randomBetween(0, speedVariance);
+    if ('.!?'.includes(char))  delay += randomBetween(300, 600);
+    if (',;:'.includes(char))  delay += randomBetween(100, 300);
+    if (Math.random() < pauseChance) delay += randomBetween(pauseDuration[0], pauseDuration[1]);
+
+    setTimeout(typeNextDesktop, delay);
+  }
+
+  setTimeout(typeNextDesktop, 800);
+}
+
+// ── PHONE ─────────────────────────────────────────────────────────────────────
+if (IS_PHONE) {
+  const phoneEl  = document.getElementById('phone-content');
+  const textPhEl = document.getElementById('text-phone');
+  const curPhEl  = document.getElementById('cursor-phone');
+
+  const TOP_OFFSET = window.innerHeight * 0.10;
+  phoneEl.style.top = TOP_OFFSET + 'px';
+
+  function adjustPhoneScroll() {
+    const maxBottom = window.innerHeight * 0.90;
+    const bottom    = phoneEl.getBoundingClientRect().bottom;
+    if (bottom > maxBottom) {
+      const overshoot  = bottom - maxBottom;
+      const currentTop = parseFloat(phoneEl.style.top) || TOP_OFFSET;
+      phoneEl.style.transition = 'top 0.4s ease';
+      phoneEl.style.top = (currentTop - overshoot) + 'px';
+    }
+  }
+
+  let index = 0;
+
+  function typeNextPhone() {
+    if (finished) return;
+    if (index >= fullText.length) {
+      appendLinkLines(phoneEl);
+      if (curPhEl) curPhEl.remove();
+      finished = true;
+      return;
+    }
+
+    const char = fullText[index];
+    textPhEl.textContent += char;
+    index++;
+
+    if (char === '\n') adjustPhoneScroll();
+
+    let delay = baseSpeed + randomBetween(0, speedVariance);
+    if ('.!?'.includes(char))  delay += randomBetween(300, 600);
+    if (',;:'.includes(char))  delay += randomBetween(100, 300);
+    if (Math.random() < pauseChance) delay += randomBetween(pauseDuration[0], pauseDuration[1]);
+
+    setTimeout(typeNextPhone, delay);
+  }
+
+  setTimeout(typeNextPhone, 800);
+}
 </script>
 
 </body>
