@@ -4,6 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Star Map</title>
+  <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+  <script src="https://virtualsky.lco.global/virtualsky.min.js"></script>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -14,14 +16,15 @@
       background: black;
     }
 
-    #starmap {
-      position: absolute;
-      top: 0; left: 0;
-      width: 100%;
-      height: 100%;
-      border: none;
-      z-index: 1;
-    }
+#starmap {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 1;
+}
+
 
     #overlay {
       position: absolute;
@@ -63,19 +66,12 @@
       0%, 100% { opacity: 1; }
       50%       { opacity: 0; }
     }
+
   </style>
 </head>
 <body>
 
-  <iframe
-    id="starmap"
-    scrolling="yes"
-    frameborder="0"
-    marginheight="0"
-    marginwidth="0"
-    allowtransparency="true"
-    src="https://virtualsky.lco.global/embed/index.html?longitude=-114.24657&latitude=48.379471&projection=gnomic&meteorshowers=true&scalestars=2&live=true&az=81.04813973442242">
-  </iframe>
+  <div id="starmap"></div>
 
   <div id="overlay"></div>
 
@@ -84,6 +80,24 @@
   </div>
 
   <script>
+
+    let planetarium;
+
+$(document).ready(function(){
+
+  planetarium = $.virtualsky({
+    id: 'starmap',
+    projection: 'gnomic',
+    latitude: 48.379471,
+    longitude: -114.24657,
+    meteorshowers: true,
+    scalestars: 2,
+    live: true,
+    az: 180
+  });
+
+});
+
     // ✏️ EDIT YOUR TEXT HERE — use \n for line breaks
     const fullText = `We believe in barns not just as buildings, but as metaphors.\n
 Where stories are stored in hay bales,\n
@@ -135,25 +149,34 @@ DON’T FORGET TO CHECK THE ATTIC.`;
 
     setTimeout(typeNext, 800);
 
-    // STAR MAP PANNING
-    const starmap  = document.getElementById('starmap');
-    const overlay  = document.getElementById('overlay');
-    let lastUpdate = 0;
-    const throttleMs = 200;
+// SMOOTH SKY DRIFT
+let mouseX = window.innerWidth/2;
+let mouseY = window.innerHeight/2;
 
-    overlay.addEventListener('mousemove', (event) => {
-      const now = Date.now();
-      if (now - lastUpdate < throttleMs) return;
-      lastUpdate = now;
+overlay.addEventListener('mousemove',(e)=>{
+  mouseX = e.clientX;
+  mouseY = e.clientY;
+});
 
-      const xPercent = event.clientX / window.innerWidth;
-      const yPercent = event.clientY / window.innerHeight;
+function animate(){
 
-      const az  = (xPercent * 360).toFixed(4);
-      const alt = (90 - yPercent * 90).toFixed(4);
+  const cx = window.innerWidth/2;
+  const cy = window.innerHeight/2;
 
-      starmap.src = `https://virtualsky.lco.global/embed/index.html?longitude=-114.24657&latitude=48.379471&projection=gnomic&meteorshowers=true&scalestars=2&live=true&az=${az}&alt=${alt}`;
-    });
+  const dx = (mouseX - cx)/cx;
+  const dy = (mouseY - cy)/cy;
+
+  const speed = 0.15;
+
+  planetarium.az += dx * speed;
+
+  requestAnimationFrame(animate);
+
+}
+
+animate();
+
+
   </script>
 
 </body>
