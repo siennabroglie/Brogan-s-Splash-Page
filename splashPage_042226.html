@@ -1,0 +1,683 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Star Map</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: black; }
+    canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; }
+    #overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 2; pointer-events: none; }
+
+    /* ── Shared text styles ── */
+    .col {
+      position: absolute;
+      color: white;
+      font-family: 'Times New Roman', Times, serif;
+      font-size: 21px;
+      line-height: 1.6;
+      text-shadow: 0 2px 12px rgba(0,0,0,0.9);
+      pointer-events: none;
+      white-space: pre-wrap;
+    }
+
+    /* ── Desktop / tablet (≥768px): two columns ── */
+    #col1 {
+      top: 10%;
+      left: 5%;
+      width: 38%;
+    }
+    #col2 {
+      top: 10%;
+      left: 50%;
+      width: 38%;
+      display: none; /* hidden until col1 is full */
+    }
+
+    /* ── Phone (<768px): single scrolling column ── */
+    #phone-content {
+      position: absolute;
+      left: 5%;
+      width: 90%;
+      color: white;
+      font-family: 'Times New Roman', Times, serif;
+      font-size: 16px;
+      line-height: 1.6;
+      text-shadow: 0 2px 12px rgba(0,0,0,0.9);
+      pointer-events: none;
+      white-space: pre-wrap;
+      display: none;
+    }
+
+    /* ── Link lines ── */
+    .link-line-wrapper {
+      display: block;
+      text-decoration: none;
+      pointer-events: auto;
+    }
+    .link-line-wrapper:hover {
+      text-decoration: underline;
+      text-decoration-color: #f95921;
+    }
+    .link-line {
+      font-weight: bold;
+      color: #f95921;
+      pointer-events: auto;
+      cursor: pointer;
+      text-decoration: none;
+      display: inline;
+    }
+
+    /* ── Blinking cursor ── */
+    #cursor {
+      display: inline-block;
+      width: 2px;
+      height: 1.2em;
+      background: white;
+      margin-left: 2px;
+      vertical-align: text-bottom;
+      animation: blink 0.7s step-end infinite;
+    }
+    @keyframes blink {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0; }
+    }
+
+    /* ── Phone overrides ── */
+    @media (max-width: 767px) {
+      #col1, #col2 { display: none !important; }
+      #phone-content { display: block; }
+    }
+    @media (min-width: 768px) {
+      #phone-content { display: none !important; }
+    }
+  </style>
+</head>
+<body>
+
+<canvas id="sky"></canvas>
+<div id="overlay">
+  <!-- Desktop / tablet: two columns -->
+  <div id="col1" class="col"><span id="text1"></span><span id="cursor"></span></div>
+  <div id="col2" class="col"><span id="text2"></span></div>
+  <!-- Phone: single scrolling column -->
+  <div id="phone-content" class="col"><span id="text-phone"></span><span id="cursor-phone" style="display:inline-block;width:2px;height:1.2em;background:white;margin-left:2px;vertical-align:text-bottom;animation:blink 0.7s step-end infinite;"></span></div>
+</div>
+
+<script>
+// ─────────────────────────────────────────────────────────────────────────────
+// OBSERVER LOCATION — Kalispell, MT
+// ─────────────────────────────────────────────────────────────────────────────
+const LAT_DEG =  48.3795;
+const LON_DEG = -114.2468;
+const LAT = LAT_DEG * Math.PI / 180;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ASTRONOMY — Convert RA/Dec to Altitude/Azimuth for current time + location
+// ─────────────────────────────────────────────────────────────────────────────
+function getJulianDate(date) {
+  return date.getTime() / 86400000 + 2440587.5;
+}
+
+function getGMST(jd) {
+  // Greenwich Mean Sidereal Time in degrees
+  const T = (jd - 2451545.0) / 36525.0;
+  let gmst = 280.46061837 + 360.98564736629 * (jd - 2451545.0)
+           + 0.000387933 * T * T - T * T * T / 38710000.0;
+  return ((gmst % 360) + 360) % 360;
+}
+
+function raDecToAltAz(ra_hours, dec_deg) {
+  const jd   = getJulianDate(new Date());
+  const gmst = getGMST(jd);
+  const lst  = ((gmst + LON_DEG) % 360 + 360) % 360; // Local Sidereal Time, degrees
+
+  const ra_deg = ra_hours * 15;
+  const ha = (lst - ra_deg + 360) % 360; // Hour Angle in degrees
+  const H  = ha * Math.PI / 180;
+  const d  = dec_deg * Math.PI / 180;
+
+  const sinAlt = Math.sin(d) * Math.sin(LAT) + Math.cos(d) * Math.cos(LAT) * Math.cos(H);
+  const alt    = Math.asin(sinAlt);
+
+  const cosAz  = (Math.sin(d) - Math.sin(alt) * Math.sin(LAT)) / (Math.cos(alt) * Math.cos(LAT));
+  const clampedCosAz = Math.max(-1, Math.min(1, cosAz));
+  let az = Math.acos(clampedCosAz);
+  if (Math.sin(H) > 0) az = 2 * Math.PI - az;
+
+  return { alt, az };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// STAR CATALOG — Yale Bright Star Catalog subset
+// Format: [ra_hours, dec_degrees, magnitude, name]
+// Contains all named stars + enough fainter stars for a full sky
+// ─────────────────────────────────────────────────────────────────────────────
+const CATALOG = [
+  // Magnitude 0 and below (brightest)
+  [6.7525,-16.7161,-1.46,"Sirius"],[6.3992,-52.6957,0.01,"Canopus"],[14.2631,19.1822,-0.05,"Arcturus"],
+  [18.6157,38.7836,0.03,"Vega"],[5.9195,44.9435,0.08,"Capella"],[1.6286,10.1233,0.45,"Hamal"],
+  [7.6554,5.2248,0.50,"Procyon"],[5.6036,-1.2019,0.50,"Betelgeuse"],[20.6905,45.2803,1.25,"Deneb"],
+  [22.9608,-29.6223,1.16,"Fomalhaut"],[11.0621,61.7508,1.77,"Dubhe"],
+
+  // Magnitude 1
+  [5.4784,-0.2991,0.85,"Rigel"],[14.0631,-60.3730,0.61,"Hadar"],[18.5235,-26.2967,0.9,"Nunki"],
+  [4.5987,16.5093,0.87,"Aldebaran"],[13.4199,-11.1613,0.98,"Spica"],[16.4901,26.1045,1.2,"Alphecca"],
+  [22.0573,-46.9613,1.17,"Al Na'ir"],[20.3906,-56.7350,1.85,"Peacock"],[12.4436,-63.0992,1.25,"Mimosa"],
+  [7.5766,31.8883,1.93,"Pollux"],[7.4556,31.8883,1.58,"Castor"],[10.1395,11.9672,1.35,"Regulus"],
+  [5.9202,-35.7683,1.70,"Adhara"],[22.5710,6.1978,2.49,"Sadalsuud"],[12.2654,-63.0992,2.85,"Acrux"],
+  [19.8463,8.8683,0.76,"Altair"],[17.5603,-37.1043,1.63,"Shaula"],[12.9004,55.9598,1.81,"Alioth"],
+  [5.6780,-34.0744,1.83,"Saiph"],[13.7923,49.3133,1.86,"Alkaid"],[10.3319,19.8420,2.14,"Algieba"],
+  [2.5303,89.2641,2.02,"Polaris"],[13.7984,18.3977,2.65,"Cor Caroli"],[21.7364,-16.1271,2.39,"Deneb Algedi"],
+  [9.4599,-43.4328,2.45,"Regor"],[3.7914,24.1053,2.87,"Alcyone"],[16.0054,-22.6217,2.56,"Antares"],
+  [17.6222,12.5600,2.77,"Rasalhague"],[14.8455,74.1554,2.08,"Kochab"],[16.3505,-25.5928,2.89,"Graffias"],
+  [5.4356,28.6075,2.97,"Alnath"],[18.3524,39.6406,3.05,"Sheliak"],[6.0575,20.1384,3.53,"Meissa"],
+  [23.4624,-17.9866,2.04,"Sadalmelik"],[4.8764,-8.7016,2.06,"Cursa"],[5.2423,45.9980,2.66,"Elnath"],
+
+  // Magnitude 2
+  [2.0694,29.0904,2.00,"Mirach"],[0.1395,29.0904,2.06,"Alpheratz"],[10.8978,61.7508,2.37,"Merak"],
+  [1.1028,35.6205,2.10,"Hamal"],[3.4013,49.8612,1.79,"Mirfak"],[6.9986,-28.9722,2.0,"Wezen"],
+  [20.7695,-33.7767,2.22,"Kaus Australis"],[17.7043,4.5673,2.43,"Cebalrai"],[18.9461,32.6894,3.36,"Albireo"],
+  [23.0629,-15.8208,2.11,"Skat"],[12.9004,38.3183,2.44,"Cor Caroli"],[3.1920,-8.8982,2.53,"Beid"],
+  [2.5303,57.8153,2.34,"Schedar"],[0.6751,56.5373,2.27,"Caph"],[9.2198,-69.7172,2.80,"Miaplacidus"],
+  [6.6287,16.3993,2.98,"Alhena"],[6.8375,33.9625,2.00,"Menkalinan"],[8.7459,5.8753,2.86,"Gomeisa"],
+  [22.7141,-46.8846,2.39,"Alnair"],[14.5306,38.3183,2.65,"Seginus"],[15.5779,-41.1665,2.61,"Zubenhakrabi"],
+  [22.3080,-0.3198,3.77,"Sadalsud"],[2.6579,55.8955,3.44,"Ruchbah"],[1.9097,63.6701,3.66,"Navi"],
+  [21.7215,9.8750,2.44,"Enif"],[11.8172,14.5722,2.14,"Zosma"],[12.2568,21.5572,2.22,"Denebola"],
+  [16.6179,-10.5670,2.75,"Unukalhai"],[3.7639,24.1053,2.86,"Electra"],[15.7374,-26.1141,2.89,"Dschubba"],
+  [8.0590,47.1562,1.90,"Talitha"],[12.6939,55.9598,2.77,"Mizar"],[18.8024,33.3626,3.04,"Vega"],
+  [23.6787,77.6322,3.22,"Errai"],[20.6273,-35.2836,3.77,"Peacock"],[4.3401,15.6277,3.65,"Ain"],
+  [10.1398,-70.0380,3.31,"Tureis"],[21.5257,47.7065,2.86,"Sadr"],[6.3749,22.5136,3.03,"Propus"],
+  [4.0131,50.3553,3.71,"Hassaleh"],[7.8767,-52.9666,3.85,"Naos"],[22.6911,10.8317,3.77,"Homam"],
+  [3.1579,40.9557,2.10,"Almach"],[14.7481,-15.9998,2.75,"Zubenelgenubi"],[5.7959,-6.1996,2.20,"Mintaka"],
+  [5.7978,-1.9424,1.70,"Alnilam"],[5.8335,-1.2019,2.23,"Alnitak"],[2.9044,20.8081,2.54,"Menkar"],
+  [17.2505,-15.7243,3.32,"Sabik"],[16.2399,-3.6942,2.43,"Han"],[4.2217,-8.2017,3.69,"Rigel"],
+
+  // Magnitude 3–4 fill (no names, just positions for sky density)
+  [0.4356,56.5373,3.4,""],[0.7228,60.7167,3.5,""],[1.3556,54.5139,3.7,""],[2.7719,3.2361,3.5,""],
+  [3.5650,47.7875,3.9,""],[4.9641,-5.9090,4.0,""],[5.1322,-8.2017,4.1,""],[5.4125,-2.3981,4.0,""],
+  [6.3278,-17.9557,4.1,""],[6.7550,-16.7161,4.2,""],[7.2861,-26.7697,4.3,""],[8.3450,20.5215,4.2,""],
+  [9.1308,-43.3022,3.8,""],[10.5613,41.4993,3.6,""],[11.2356,-54.4913,4.0,""],[12.5578,69.7867,3.7,""],
+  [13.1992,-36.7098,3.4,""],[14.1067,-36.3718,3.9,""],[15.2072,-9.3831,4.0,""],[16.7147,31.6022,3.8,""],
+  [17.3731,-15.3980,3.9,""],[18.1508,9.5619,4.1,""],[19.5120,27.9597,3.8,""],[20.1891,-12.5464,3.9,""],
+  [21.1064,-11.3722,4.0,""],[21.7365,37.1488,4.1,""],[22.0906,64.6278,3.5,""],[23.1644,-21.1724,3.8,""],
+  [0.1553,-17.9869,3.7,""],[1.9220,-21.0782,3.6,""],[3.0583,53.5063,3.8,""],[4.5669,-3.3523,3.9,""],
+  [6.0543,23.2641,4.1,""],[7.5536,-31.8688,3.8,""],[9.6499,-65.0717,3.9,""],[11.5536,-63.0195,4.0,""],
+  [13.8234,-47.2888,3.7,""],[15.8777,-3.4311,3.9,""],[17.8893,-26.9948,4.1,""],[19.2294,67.6613,3.5,""],
+  [20.9261,-37.1043,3.8,""],[22.4911,-60.2596,4.0,""],[0.8236,-29.3579,3.9,""],[2.2689,-23.6249,3.8,""],
+  [5.3317,6.1997,4.2,""],[8.1448,-47.3363,4.0,""],[10.7789,-49.4200,3.9,""],[14.3479,51.7874,3.7,""],
+  [16.5180,-28.1358,3.6,""],[18.7461,-26.9948,3.8,""],[21.3697,-65.3688,3.9,""],[23.8799,56.5252,4.0,""],
+  [1.6130,15.3470,4.1,""],[3.9634,35.7908,3.7,""],[7.0442,20.5694,3.9,""],[12.6780,-48.9598,3.8,""],
+  [17.4302,14.3906,3.5,""],[20.3570,-14.7818,4.0,""],[22.7141,-46.8846,3.9,""],[5.0000,43.8231,3.7,""],
+  [9.7499,23.7742,3.5,""],[14.7636,27.0742,3.8,""],[19.3876,-40.6162,3.9,""],[0.6456,-77.2543,4.1,""],
+  [4.9008,33.1661,3.7,""],[11.8340,-34.5233,3.9,""],[16.8365,-38.0473,3.8,""],[22.1368,-60.2596,3.6,""],
+  [6.5560,-32.3087,3.8,""],[13.5722,36.7981,3.7,""],[18.3556,-2.8988,3.9,""],[21.8782,7.3779,4.0,""],
+  [0.3227,-8.8238,3.8,""],[5.6209,-5.9090,3.9,""],[10.3956,-61.6852,3.7,""],[15.4564,-29.7778,3.8,""],
+  [20.6895,15.0685,3.5,""],[1.4313,60.2353,3.9,""],[7.8556,-52.9820,3.8,""],[14.0628,-60.3730,3.7,""],
+  [18.6014,-25.4218,3.9,""],[22.5087,-43.5196,3.8,""],[3.3083,46.0342,3.7,""],[9.5006,-59.5097,3.9,""],
+  [15.0677,-25.2817,3.8,""],[19.7701,-23.8496,4.0,""],[23.2886,28.0825,3.6,""],[6.1556,-6.2742,3.8,""],
+  [12.0783,-50.7217,3.7,""],[17.0422,30.5526,3.6,""],[20.8861,18.5342,3.8,""],[2.8267,29.0904,4.0,""],
+  [8.4456,-59.5097,3.9,""],[13.9100,-47.1721,3.7,""],[18.0214,2.9313,3.8,""],[21.5257,-16.6623,3.9,""],
+  [0.9481,41.0794,3.8,""],[5.1956,15.6277,3.7,""],[10.8278,34.2148,4.0,""],[16.1246,-3.6942,3.8,""],
+  [19.5612,10.5963,3.9,""],[22.8578,24.6020,3.7,""],[4.6539,-14.3043,3.9,""],[11.6356,-64.3943,3.8,""],
+  [15.7378,-29.2138,4.0,""],[20.1524,-12.7523,3.9,""],[1.7244,-25.0494,3.7,""],[7.3489,-43.3022,3.8,""],
+  [13.7639,3.3994,3.7,""],[18.5021,-26.2967,3.9,""],[22.2167,-21.1724,3.8,""],[3.6286,47.7875,3.6,""],
+  [8.6726,5.5758,3.8,""],[14.4517,13.7782,3.9,""],[19.0901,-29.8802,4.0,""],[23.5437,10.8317,3.7,""],
+  [5.2478,-8.2017,4.1,""],[9.8344,-65.0717,3.8,""],[16.4405,-26.4320,3.7,""],[21.2278,30.2269,3.9,""],
+  [0.0556,15.1836,3.8,""],[6.8989,-50.6145,3.9,""],[12.9578,-60.3730,3.8,""],[17.5808,-37.1043,4.0,""],
+  [20.5256,-0.3198,3.9,""],[1.1613,-10.1817,3.7,""],[4.1511,47.7075,3.8,""],[10.1234,12.8842,3.9,""],
+  [15.2072,-9.3831,3.7,""],[19.8567,6.4068,4.0,""],[22.6706,77.6322,3.8,""],[5.9951,-44.7022,3.7,""],
+  [13.4340,-36.7098,3.9,""],[18.3021,-36.7621,3.8,""],[21.6813,57.1564,3.7,""],[0.4356,-43.0799,3.9,""],
+  [7.5769,28.0267,3.8,""],[14.6878,13.7235,3.9,""],[19.4126,-40.6162,3.8,""],[23.1567,-45.2469,3.7,""],
+  [3.9823,2.7683,3.8,""],[11.2611,20.5236,3.9,""],[16.3239,-41.4688,3.7,""],[20.7489,-70.9017,3.8,""],
+  [1.9097,-21.0782,3.9,""],[6.2056,22.5136,3.7,""],[12.1344,-52.3683,3.8,""],[17.8025,50.2247,3.9,""],
+  [21.9824,-47.2913,3.8,""],[4.4133,9.7319,3.9,""],[10.3319,55.9598,3.7,""],[15.7134,-58.8018,3.8,""],
+  [20.0189,-72.9100,3.9,""],[23.6456,46.4577,3.7,""],[6.4389,-52.6957,3.8,""],[13.0667,-49.5313,3.9,""],
+  [17.2281,-43.2393,3.8,""],[20.5593,-25.0049,3.7,""],[2.0750,23.4628,4.0,""],[8.7233,-54.7088,3.9,""],
+  [14.2467,51.7874,3.8,""],[19.2134,-21.7567,3.9,""],[22.3634,-5.5713,3.7,""],[5.7056,-34.0744,4.0,""],
+  [12.5578,41.3565,3.8,""],[17.5303,-37.1043,3.9,""],[21.1345,38.3946,3.7,""],[0.1556,29.0904,3.9,""],
+  [4.8269,-5.4505,3.8,""],[9.3145,-43.3022,3.7,""],[15.5371,-14.7892,3.9,""],[20.4023,-56.7350,3.8,""],
+];
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CANVAS SETUP
+// ─────────────────────────────────────────────────────────────────────────────
+const canvas = document.getElementById('sky');
+const ctx    = canvas.getContext('2d');
+
+function resize() {
+  canvas.width  = window.innerWidth;
+  canvas.height = window.innerHeight;
+}
+window.addEventListener('resize', resize);
+resize();
+
+// ─────────────────────────────────────────────────────────────────────────────
+// VIEW STATE — view direction in alt/az
+// These are offsets from the computed real sky position
+// ─────────────────────────────────────────────────────────────────────────────
+let viewAzOffset  = 0;   // radians, user can pan left/right
+let viewAltOffset = 0;   // radians, user can pan up/down
+
+let mx = 0, my = 0;
+
+document.addEventListener('mousemove', function(e) {
+  mx = (e.clientX - window.innerWidth  / 2) / (window.innerWidth  / 2);
+  my = (e.clientY - window.innerHeight / 2) / (window.innerHeight / 2);
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PROJECTION — gnomonic (perspective) projection
+// ─────────────────────────────────────────────────────────────────────────────
+function project(altRad, azRad, centerAlt, centerAz) {
+  // Rotate star position relative to view center
+  const dAz  = azRad - centerAz;
+  const dAlt = altRad - centerAlt;
+
+  // Convert to cartesian on unit sphere
+  const x = Math.cos(altRad) * Math.sin(dAz);
+  const y = Math.sin(altRad) * Math.cos(centerAlt)
+          - Math.cos(altRad) * Math.sin(centerAlt) * Math.cos(dAz);
+  const z = Math.sin(altRad) * Math.sin(centerAlt)
+          + Math.cos(altRad) * Math.cos(centerAlt) * Math.cos(dAz);
+
+  if (z <= 0.01) return null; // behind view
+
+  const fov   = 1.4;
+  const scale = Math.min(canvas.width, canvas.height) / fov;
+
+  return {
+    x: canvas.width  / 2 + (x / z) * scale,
+    y: canvas.height / 2 - (y / z) * scale,
+    z
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PLANET POSITIONS — Low-precision orbital elements (J2000.0)
+// ─────────────────────────────────────────────────────────────────────────────
+function getPlanetPositions() {
+  const jd = getJulianDate(new Date());
+  const T  = (jd - 2451545.0) / 36525.0;
+  const DEG = Math.PI / 180;
+  const planets = [];
+
+  function toRADec(L, B) {
+    const eps = (23.439291111 - 0.013004167 * T) * DEG;
+    const x = Math.cos(B) * Math.cos(L);
+    const y = Math.cos(eps) * Math.cos(B) * Math.sin(L) - Math.sin(eps) * Math.sin(B);
+    const z = Math.sin(eps) * Math.cos(B) * Math.sin(L) + Math.cos(eps) * Math.sin(B);
+    const ra  = ((Math.atan2(y, x) * 180 / Math.PI) + 360) % 360;
+    const dec = Math.asin(Math.max(-1, Math.min(1, z))) * 180 / Math.PI;
+    return { ra: ra / 15, dec };
+  }
+
+  const bodies = [
+    { name: 'Mercury', L0: 252.250906, dL: 149472.6746358, color: '#cccccc', size: 3,   mag:  0.0 },
+    { name: 'Venus',   L0: 181.979801, dL:  58517.8156760, color: '#fffde0', size: 5,   mag: -4.0 },
+    { name: 'Mars',    L0: 355.433000, dL:  19140.2993313, color: '#ffddcc', size: 3.5, mag:  0.5 },
+    { name: 'Jupiter', L0:  34.351519, dL:   3034.9056606, color: '#f5e6c8', size: 5.5, mag: -2.0 },
+    { name: 'Saturn',  L0:  50.077444, dL:   1222.1138488, color: '#f0e4b0', size: 4,   mag:  0.7 },
+  ];
+
+  for (const b of bodies) {
+    const L = ((b.L0 + b.dL * T) * DEG) % (2 * Math.PI);
+    const pos = toRADec(L, 0);
+    const altaz = raDecToAltAz(pos.ra, pos.dec);
+    planets.push({ name: b.name, alt: altaz.alt, az: altaz.az, color: b.color, size: b.size, mag: b.mag });
+  }
+
+  return planets;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PRECOMPUTE star alt/az — recalculate every 60s for performance
+// ─────────────────────────────────────────────────────────────────────────────
+let cachedStars   = [];
+let cachedPlanets = [];
+let lastCalcTime  = 0;
+
+function recomputeStars() {
+  cachedStars = CATALOG.map(([ra, dec, mag, name]) => {
+    const pos = raDecToAltAz(ra, dec);
+    return { alt: pos.alt, az: pos.az, mag, name };
+  });
+  cachedPlanets = getPlanetPositions();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// RENDER LOOP
+// ─────────────────────────────────────────────────────────────────────────────
+let time = 0;
+
+function draw() {
+  time += 0.02;
+
+  // Recompute real positions every 60 seconds
+  const now = Date.now();
+  if (now - lastCalcTime > 60000) {
+    recomputeStars();
+    lastCalcTime = now;
+  }
+
+  // Cursor-driven pan — cubic curve so speed stays near zero until edge of screen
+  // mx/my are -1 to 1; raising to power 3 keeps center very slow, accelerates at edges
+  const deadZone = 0.15;
+  const speed    = 0.012;
+  const ax = Math.abs(mx) > deadZone ? Math.sign(mx) * Math.pow(Math.abs(mx), 3) : 0;
+  const ay = Math.abs(my) > deadZone ? Math.sign(my) * Math.pow(Math.abs(my), 3) : 0;
+  viewAzOffset  += ax * speed;
+  viewAltOffset -= ay * speed;
+
+  // Wrap az, clamp alt so you don't go past zenith/nadir
+  viewAzOffset  = ((viewAzOffset  % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+  viewAltOffset = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, viewAltOffset));
+
+  // View center: start facing south (az=PI) at 45° altitude, plus user offset
+  const centerAz  = (Math.PI + viewAzOffset)  % (Math.PI * 2);
+  const centerAlt = Math.PI / 4 + viewAltOffset;
+
+  // Clear
+  ctx.fillStyle = '#000000';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  // Draw stars
+  for (let i = 0; i < cachedStars.length; i++) {
+    const s = cachedStars[i];
+    const p = project(s.alt, s.az, centerAlt, centerAz);
+    if (!p) continue;
+    if (p.x < -20 || p.x > canvas.width + 20) continue;
+    if (p.y < -20 || p.y > canvas.height + 20) continue;
+
+    // Size: higher floor so dim stars stay visible
+    const brightness = Math.max(0, (6.5 - s.mag) / 6.5);
+    const size = Math.pow(brightness, 1.2) * 2.5 + 0.6;
+
+    // Very subtle twinkle — all stars, barely perceptible
+    const twinkle = brightness * (0.92 + 0.08 * Math.sin(time * 1.5 + i * 2.3));
+
+    // Raised alpha floor so faint stars don't disappear
+    const alpha = Math.min(1, Math.max(0.35, twinkle));
+
+    // Glow for bright stars
+    if (s.mag < 2.5) {
+      const glowR = size * 5;
+      const glow  = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, glowR);
+      glow.addColorStop(0, `rgba(255,255,255,${alpha * 0.35})`);
+      glow.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = glow;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, glowR, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Star dot
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, size, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(255,255,255,${alpha})`;
+    ctx.fill();
+  }
+
+  // Draw planets
+  for (let i = 0; i < cachedPlanets.length; i++) {
+    const planet = cachedPlanets[i];
+    const p = project(planet.alt, planet.az, centerAlt, centerAz);
+    if (!p) continue;
+    if (p.x < -20 || p.x > canvas.width + 20) continue;
+    if (p.y < -20 || p.y > canvas.height + 20) continue;
+
+    // Outer glow
+    const glowR = planet.size * 6;
+    const glow  = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, glowR);
+    glow.addColorStop(0, 'rgba(255,255,255,0.4)');
+    glow.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, glowR, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Planet disc
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, planet.size, 0, Math.PI * 2);
+    ctx.fillStyle = planet.color;
+    ctx.fill();
+  }
+
+  requestAnimationFrame(draw);
+}
+
+// Initial compute then start
+recomputeStars();
+lastCalcTime = Date.now();
+draw();
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TYPEWRITER
+// ─────────────────────────────────────────────────────────────────────────────
+const IS_PHONE = window.innerWidth < 768;
+
+// Text split: body text | link lines (last 2)
+const bodyText =
+`We believe in barns not just as buildings, but as metaphors.
+
+Where stories are stored in hay bales,
+Donor moments hang from rusted hooks,
+Every ladder leads to a forgotten game,
+Every storm cellar hides a truth too soggy to explain.
+
+The Mind Barn is not a brand.
+It's a barn door left open.
+Ideas escape. Visitors wander.
+Some paint the walls. Some fix the roof.
+Some just sit in the loft and listen.
+
+There is mystery in the rafters.
+There is memory in the mudroom.
+
+This is not a website.
+This is a living structure.
+A place to play, archive, remember, and repair.
+
+`;
+
+const linkLines = [
+  { text: 'WELCOME TO THE MIND BARN.', url: 'YOUR_URL_HERE' },
+  { text: "DON'T FORGET TO CHECK THE ATTIC.", url: 'YOUR_URL_HERE' }
+];
+
+const fullText = bodyText;
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+const baseSpeed     = 25;
+const speedVariance = 10;
+const pauseChance   = 0.05;
+const pauseDuration = [100, 200];
+
+function randomBetween(min, max) { return Math.random() * (max - min) + min; }
+
+// Append link lines as styled <a> elements to a container
+function appendLinkLines(container) {
+  const wrapper = document.createElement('span');
+  wrapper.className = 'link-line-wrapper';
+  linkLines.forEach((l, i) => {
+    const a = document.createElement('a');
+    a.className   = 'link-line';
+    a.textContent = l.text;
+    a.href        = l.url;
+    a.target      = '_blank';
+    wrapper.appendChild(a);
+    if (i < linkLines.length - 1) wrapper.appendChild(document.createTextNode(' '));
+  });
+  container.appendChild(wrapper);
+}
+
+// ── Skip-to-end on click/tap ──────────────────────────────────────────────────
+let finished = false;
+
+function skipToEnd() {
+  if (finished) return;
+  finished = true;
+
+  if (IS_PHONE) {
+    const ph = document.getElementById('text-phone');
+    const cp = document.getElementById('cursor-phone');
+    ph.textContent = bodyText;
+    appendLinkLines(ph.parentNode);
+    if (cp) cp.remove();
+    // keep scroll position correct
+    adjustPhoneScroll();
+  } else {
+    // Fill whichever column is active, hide cursor
+    const t1 = document.getElementById('text1');
+    const t2 = document.getElementById('text2');
+    const cur = document.getElementById('cursor');
+    const col2 = document.getElementById('col2');
+
+    t1.textContent = bodyText;
+    // Check if col1 overflows — reuse line-aware splitIntoColumns
+    setTimeout(() => {
+      if (col1Overflows()) {
+        splitIntoColumns();
+      } else {
+        appendLinkLines(t1.parentNode);
+      }
+      if (cur) cur.remove();
+    }, 50);
+  }
+}
+
+document.addEventListener('click',     skipToEnd);
+document.addEventListener('touchstart', skipToEnd, { passive: true });
+
+// ── DESKTOP / TABLET ─────────────────────────────────────────────────────────
+if (!IS_PHONE) {
+  const col1El  = document.getElementById('col1');
+  const col2El  = document.getElementById('col2');
+  const text1El = document.getElementById('text1');
+  const text2El = document.getElementById('text2');
+  const cursorEl = document.getElementById('cursor');
+
+  const TOP_PCT    = 0.10;
+  const BOTTOM_PCT = 0.90;
+
+  col1El.style.top = (window.innerHeight * TOP_PCT) + 'px';
+  col2El.style.top = (window.innerHeight * TOP_PCT) + 'px';
+
+  function col1Overflows() {
+    const maxBottom = window.innerHeight * BOTTOM_PCT;
+    return col1El.getBoundingClientRect().bottom > maxBottom;
+  }
+
+  // Once col1 is full: freeze its text, move overflow to col2
+  function splitIntoColumns() {
+    const allText = text1El.textContent;
+    const lines   = allText.split('\n');
+    col2El.style.display = 'block';
+
+    // Binary search for the split point — always on a line boundary
+    let lo = 0, hi = lines.length;
+    while (lo < hi - 1) {
+      const mid = Math.floor((lo + hi) / 2);
+      text1El.textContent = lines.slice(0, mid).join('\n');
+      if (col1Overflows()) hi = mid; else lo = mid;
+    }
+    text2El.textContent = lines.slice(lo).join('\n');
+    appendLinkLines(col2El);
+
+    // Move cursor to col2
+    col2El.appendChild(cursorEl);
+  }
+
+  let index = 0;
+  let inCol2 = false;
+
+  function typeNextDesktop() {
+    if (finished) return;
+    if (index >= fullText.length) {
+      // Done — append link lines
+      if (!inCol2) {
+        appendLinkLines(col1El);
+      } else {
+        appendLinkLines(col2El);
+      }
+      finished = true;
+      return;
+    }
+
+    const char = fullText[index];
+    text1El.textContent += char;
+    index++;
+
+    // After each newline check if col1 has overflowed
+    if (char === '\n' && !inCol2 && col1Overflows()) {
+      inCol2 = true;
+      splitIntoColumns();
+      // From here, remaining text types into col2
+      // Reassign typing target
+      typeNextDesktop._target = text2El;
+      col2El.style.display = 'block';
+    }
+
+    let delay = baseSpeed + randomBetween(0, speedVariance);
+    if ('.!?'.includes(char))  delay += randomBetween(150, 300);
+    if (',;:'.includes(char))  delay += randomBetween(50, 150);
+    if (Math.random() < pauseChance) delay += randomBetween(pauseDuration[0], pauseDuration[1]);
+
+    setTimeout(typeNextDesktop, delay);
+  }
+
+  setTimeout(typeNextDesktop, 800);
+}
+
+// ── PHONE ─────────────────────────────────────────────────────────────────────
+if (IS_PHONE) {
+  const phoneEl  = document.getElementById('phone-content');
+  const textPhEl = document.getElementById('text-phone');
+  const curPhEl  = document.getElementById('cursor-phone');
+
+  const TOP_OFFSET = window.innerHeight * 0.10;
+  phoneEl.style.top = TOP_OFFSET + 'px';
+
+  function adjustPhoneScroll() {
+    const maxBottom = window.innerHeight * 0.90;
+    const bottom    = phoneEl.getBoundingClientRect().bottom;
+    if (bottom > maxBottom) {
+      const overshoot  = bottom - maxBottom;
+      const currentTop = parseFloat(phoneEl.style.top) || TOP_OFFSET;
+      phoneEl.style.transition = 'top 0.4s ease';
+      phoneEl.style.top = (currentTop - overshoot) + 'px';
+    }
+  }
+
+  let index = 0;
+
+  function typeNextPhone() {
+    if (finished) return;
+    if (index >= fullText.length) {
+      appendLinkLines(phoneEl);
+      if (curPhEl) curPhEl.remove();
+      finished = true;
+      return;
+    }
+
+    const char = fullText[index];
+    textPhEl.textContent += char;
+    index++;
+
+    if (char === '\n') adjustPhoneScroll();
+
+    let delay = baseSpeed + randomBetween(0, speedVariance);
+    if ('.!?'.includes(char))  delay += randomBetween(150, 300);
+    if (',;:'.includes(char))  delay += randomBetween(50, 150);
+    if (Math.random() < pauseChance) delay += randomBetween(pauseDuration[0], pauseDuration[1]);
+
+    setTimeout(typeNextPhone, delay);
+  }
+
+  setTimeout(typeNextPhone, 800);
+}
+</script>
+
+</body>
+</html>
