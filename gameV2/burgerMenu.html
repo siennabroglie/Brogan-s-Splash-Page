@@ -62,23 +62,27 @@
     .ing svg { display: block; overflow: visible; }
 
     /* Labels sit to the LEFT of the burger, right-aligned, absolutely positioned */
+    /* Menu labels — flat GREY boxes matching the Mind Barn site: a 1pt border one shade
+       lighter than the box, a slight drop shadow, Caveat text, and orange as the hover
+       highlight (white text on an orange fill). */
     .ing-label {
       position: absolute;
       right: 72px;
       text-align: right;
       font-family: 'Caveat', cursive;
-      /* 35px here renders ~23px on screen once the panel's 0.65 scale is applied,
-         matching the help popup's 23px body text. */
+      /* 35px here renders ~23px on screen once the panel's 0.65 scale is applied. */
       font-size: 35px;
-      color: #000;
-      background: rgba(255, 255, 255, 0.75);
-      padding: 5px 12px;
-      border-radius: 8px;
+      color: #141414;
+      background: #c6c6c6;
+      border: 1px solid #e6e6e6;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.28);
+      padding: 4px 14px;
+      border-radius: 0;
       text-decoration: none;
       white-space: nowrap;
       opacity: 0;
       transform: translateX(6px);
-      transition: opacity 0.3s ease, transform 0.3s ease, color 0.2s ease, background 0.2s ease;
+      transition: opacity 0.3s ease, transform 0.3s ease, color 0.2s ease, background 0.2s ease, border-color 0.2s ease;
       pointer-events: none;
       /* vertically centered on its ingredient */
       line-height: 1;
@@ -88,7 +92,7 @@
       transform: translateX(0);
       pointer-events: auto;
     }
-    .ing-label:hover { color: #f95921; background: rgba(255, 255, 255, 1); }
+    .ing-label:hover { color: #fff; background: #f2872e; border-color: #f2872e; }
   </style>
 </head>
 <body>

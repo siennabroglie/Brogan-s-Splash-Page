@@ -6,21 +6,26 @@
 <title>The Farm</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Caveat:wght@400;500;600;700&family=Nunito:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Caveat:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body { width: 100%; height: 100%; background: #000; overflow: hidden; }
   #renderCanvas { width: 100%; height: 100%; touch-action: none; outline: none; display: block; }
 
-  /* ── UI chrome — match the Mind Barn site: black, white text, Caveat headings + Nunito body,
-        soft rounded outlined cards/buttons (no flat orange rectangles). ── */
+  /* ── UI chrome — match the Mind Barn site aesthetic: flat GREY boxes with a slight
+        drop shadow and a 1pt border one shade LIGHTER than the box; Caveat handwritten
+        headings, Times New Roman body text, and orange used purely as a highlight. ── */
   :root {
-    --orange: #ef9234; --orange-dim: #d57e26;   /* kept for the prop glow accent */
+    --orange: #f2872e; --orange-dim: #d97521;   /* highlight colour (also the prop glow accent) */
     --script: 'Caveat', cursive;                /* handwritten headings */
-    --sans: 'Nunito', system-ui, sans-serif;    /* body + buttons */
-    --serif: 'Nunito', system-ui, sans-serif;   /* legacy alias → now Nunito everywhere */
-    --line: rgba(255,255,255,0.45);             /* soft outline on cards/buttons */
-    --fill: rgba(255,255,255,0.06);             /* translucent dark fill */
+    --serif: 'Times New Roman', Times, serif;   /* body text */
+    --sans: 'Times New Roman', Times, serif;    /* legacy alias → body text */
+    --box: #c6c6c6;                             /* grey card / button fill */
+    --box-line: #e6e6e6;                         /* 1pt border, a lighter shade than the box */
+    --box-shadow: 0 2px 10px rgba(0,0,0,0.28);  /* slight drop shadow */
+    --ink: #141414;                             /* near-black body/heading ink */
+    /* legacy aliases (still referenced below) */
+    --line: var(--box-line); --fill: var(--box);
   }
 
   #modeLabel { display: none; }   /* top instruction line hidden */
@@ -30,14 +35,14 @@
     transform: translateX(-50%); z-index: 10; pointer-events: none;
   }
   .btn {
-    background: var(--fill); color: #fff;
-    border: 1px solid var(--line); border-radius: 14px;
-    padding: 11px 30px; font-family: 'Caveat', cursive; font-size: 23px; font-weight: 600;
+    background: var(--box); color: var(--ink);
+    border: 1px solid var(--box-line); border-radius: 0;
+    box-shadow: var(--box-shadow);
+    padding: 9px 30px; font-family: var(--script); font-size: 25px; font-weight: 600;
     cursor: pointer; pointer-events: all; letter-spacing: 0.01em;
-    backdrop-filter: blur(2px);
-    transition: background 0.15s ease, border-color 0.15s ease;
+    transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
   }
-  .btn:hover { background: rgba(255,255,255,0.16); border-color: #fff; }
+  .btn:hover { background: var(--orange); border-color: var(--orange); color: #fff; }
 
   /* Mobile third-person touch arrows — hand-drawn white glyphs fanned above the
      overview button. Forward (up) + turn left/right; jump is a double-tap on the
@@ -93,14 +98,15 @@
     font-family: var(--serif);
   }
   #helpBtn {
-    background: var(--fill); color: #fff;
-    border: 1px solid var(--line); border-radius: 50%;
-    width: 34px; height: 34px; font-family: var(--sans); font-size: 19px; font-weight: 600;
-    cursor: pointer; flex: 0 0 auto; backdrop-filter: blur(2px);
+    background: var(--box); color: var(--ink);
+    border: 1px solid var(--box-line); border-radius: 0;
+    box-shadow: var(--box-shadow);
+    width: 36px; height: 36px; font-family: var(--script); font-size: 26px; font-weight: 700;
+    cursor: pointer; flex: 0 0 auto;
     display: flex; align-items: center; justify-content: center;
-    transition: background 0.15s ease, border-color 0.15s ease;
+    transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
   }
-  #helpBtn:hover { background: rgba(255,255,255,0.16); border-color: #fff; }
+  #helpBtn:hover { background: var(--orange); border-color: var(--orange); color: #fff; }
 
   /* Burger menu — loaded from burgerMenu.html in an overlay iframe. Closed, it is a
      small transparent box beside the help icon; when the menu opens it posts a message
@@ -118,43 +124,43 @@
     padding: 40px; pointer-events: all;
   }
   #helpOverlay.visible { display: flex; }
-  /* Help panel as a handwritten note — Caveat throughout, on a translucent white card with
-     black ink. Square corners, no tilt, no bold. Two aligned columns (action / keys) so it
+  /* Help panel — a grey card matching the Mind Barn site: 1pt lighter border + slight
+     shadow, a Caveat title set in a white-on-orange highlight tag, Caveat subheadings with
+     an orange rule, and Times New Roman body text. Two aligned columns (action / keys) so it
      scans cleanly; key hints flow inline with auto slashes (no boxed keycaps). */
   #helpPanel {
-    background: rgba(255,255,255,0.75); color: #000;
-    border: 1px solid rgba(0,0,0,0.55); border-radius: 5px;
-    padding: 28px 40px 30px; font-family: var(--script); font-weight: 400;
-    font-size: 23px; line-height: 1.4; letter-spacing: 0.01em;
+    background: var(--box); color: var(--ink);
+    border: 1px solid var(--box-line); border-radius: 0;
+    box-shadow: var(--box-shadow);
+    padding: 26px 40px 30px; font-family: var(--serif); font-weight: 400;
+    font-size: 18px; line-height: 1.45;
     min-width: 400px; max-width: 500px; max-height: calc(100vh - 80px); overflow-y: auto;
   }
-  #helpPanel h2 {
-    font-family: var(--script); font-weight: 400; font-size: 48px;
-    color: #000; text-align: center; margin-bottom: 4px; line-height: 1;
+  #helpPanel h2 {                        /* white Caveat in an orange highlight tag */
+    font-family: var(--script); font-weight: 700; font-size: 40px; line-height: 1.05;
+    color: #fff; background: var(--orange); display: inline-block;
+    padding: 2px 22px 4px; margin-bottom: 16px;
   }
-  #helpPanel h2::after {                 /* hand-drawn underline under the title */
-    content: ''; display: block; width: 150px; height: 2px; margin: 8px auto 0;
-    background: rgba(0,0,0,0.45);
-  }
+  #helpPanel .h2-wrap { text-align: center; }
   #helpPanel h3 {
-    font-family: var(--script); font-weight: 400; font-size: 28px;
-    color: #000; margin: 18px 0 6px; padding-bottom: 3px;
-    border-bottom: 1px solid rgba(0,0,0,0.28);
+    font-family: var(--script); font-weight: 700; font-size: 27px;
+    color: var(--ink); margin: 18px 0 6px; padding-bottom: 3px;
+    border-bottom: 1px solid var(--orange);
   }
   #helpPanel .row {
     display: grid; grid-template-columns: 180px 1fr; gap: 14px;
-    align-items: baseline; padding: 3px 0; color: #000;
+    align-items: baseline; padding: 3px 0; color: var(--ink);
   }
-  #helpPanel .row span:last-child { color: rgba(0,0,0,0.72); }
+  #helpPanel .row span:last-child { color: rgba(20,20,20,0.68); }
   #helpPanel kbd {
     background: transparent; border: none; padding: 0; margin: 0;
-    font-family: var(--script); font-weight: 400; font-size: inherit; color: #000;
+    font-family: var(--serif); font-weight: 400; font-size: inherit; color: var(--ink);
   }
-  #helpPanel kbd + kbd::before { content: '/ '; color: rgba(0,0,0,0.4); }
+  #helpPanel kbd + kbd::before { content: '/ '; color: rgba(20,20,20,0.4); }
   #helpPanel .note {
-    margin-top: 18px; padding-top: 12px; border-top: 1px solid rgba(0,0,0,0.2);
-    font-family: var(--script); font-weight: 400; font-size: 19px;
-    color: rgba(0,0,0,0.55); text-align: center;
+    margin-top: 18px; padding-top: 12px; border-top: 1px solid rgba(20,20,20,0.22);
+    font-family: var(--serif); font-weight: 400; font-size: 15px;
+    color: rgba(20,20,20,0.6); text-align: center;
   }
   /* Wind-gust overlay — wind PNGs sweep across the top of the frame when a gust passes the camera. */
   #wind-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 45vh; overflow: hidden; pointer-events: none; z-index: 8; }
@@ -195,19 +201,17 @@
 <iframe id="menuFrame" src="burgerMenu.html" title="Menu" scrolling="no"></iframe>
 <div id="helpOverlay">
   <div id="helpPanel">
-    <h2>Controls</h2>
+    <div class="h2-wrap"><h2>Controls</h2></div>
     <h3>Overview</h3>
     <div class="row"><span>Rotate</span><span><kbd>left-drag</kbd> <kbd>arrows</kbd></span></div>
-    <div class="row"><span>Pan</span><span><kbd>right-drag</kbd> <kbd>two-finger drag</kbd> <kbd>ctrl+shift+arrows</kbd></span></div>
+    <div class="row"><span>Pan</span><span><kbd>right-drag</kbd> <kbd>two-finger drag</kbd></span></div>
     <div class="row"><span>Zoom</span><span><kbd>scroll</kbd> <kbd>pinch</kbd> <kbd>alt+↑↓</kbd></span></div>
-    <div class="row"><span>Enter third person</span><span><kbd>button below</kbd></span></div>
     <h3>Third person</h3>
     <div class="row"><span>Turn</span><span><kbd>←</kbd> <kbd>→</kbd> <kbd>A</kbd> <kbd>D</kbd></span></div>
     <div class="row"><span>Move</span><span><kbd>↑</kbd> <kbd>↓</kbd> <kbd>W</kbd> <kbd>S</kbd></span></div>
     <div class="row"><span>Sprint</span><span><kbd>shift</kbd> + forward</span></div>
     <div class="row"><span>Jump</span><span><kbd>space</kbd></span></div>
     <div class="row"><span>Look</span><span><kbd>mouse drag</kbd></span></div>
-    <div class="row"><span>Exit</span><span><kbd>esc</kbd></span></div>
     <div class="note">press <kbd>H</kbd> or click to close</div>
   </div>
 </div>
@@ -264,7 +268,7 @@ const IS_MOBILE =
 
 // ─── Tuning ───────────────────────────────────────────────────────────────────
 const PLAYER_HEIGHT  = 68;            // 75 reduced 10% — fits barn staircase clearances
-const WALK_SPEED     = 3.6;
+const WALK_SPEED     = 5.0;           // island is large; 3.6 read as a trudge crossing it
 const GRAVITY_PER_FRAME = 4.0;
 const TURN_SMOOTH    = 0.2;
 const CAMERA_DISTANCE = 80;
@@ -289,8 +293,8 @@ const GUST_WIDTH_MAX = 0.95;    // …wide = lingering pass
 // a gust across the sky, then coast off and away. Billboard PLANES (always face camera) so any
 // aspect renders cleanly (sprites clipped the wide one + showed edge artifacts).
 const FLOAT_PNGS     = [
-  { url: 'sceneAssets/wind1.png', aspect: 262 / 198 },
-  { url: 'sceneAssets/wind2.png', aspect: 551 / 169 },
+  { url: 'sceneAssets/animated-assets/flying_wind1.png', aspect: 262 / 198 },
+  { url: 'sceneAssets/animated-assets/flying_wind2.png', aspect: 551 / 169 },
 ];
 const STREAK_POOL    = 3;        // reusable streak planes (one streak rides each gust)
 const STREAK_SIZE    = 520;      // streak height in world units (width = × aspect)
@@ -300,9 +304,73 @@ const STREAK_Y_MAX   = 720;      // …to high
 const LEAN_GAIN      = 0.10;    // 'lean' tip angle per unit wind strength (radians)
 const BEND_GAIN      = 0.16;    // 'bend' top displacement fraction per unit wind strength
 const PAPER_AMP      = 0.06;    // 'paper' out-of-plane ripple depth (fraction of width) per unit wind
-// Region glow ramp — props' hotspots fade in as the player nears (full ≤ NEAR, off ≥ FAR).
-const GLOW_NEAR      = 220;     // world units: fully glowing at/inside this distance
-const GLOW_FAR       = 700;     // world units: no glow at/beyond this distance (starts early on approach)
+// Proximity ramp — each prop's "awake" amount, 0..1, from the player's distance to it
+// (full ≤ NEAR, none ≥ FAR). Drives the wake-up effect below AND gates prop clicks.
+const PROX_NEAR      = 220;     // world units: fully awake at/inside this distance
+const PROX_FAR       = 700;     // world units: fully asleep at/beyond this (starts early on approach)
+// Wake-up effect — as a prop wakes, its ink darkens and thickens, as if the drawing were being
+// gone over again with a heavier hand, and the whole sheet lifts off the ground so its sun-cast
+// shadow slides out from under it. Currently enabled on the barn only (see SCENE_PROPS.fx).
+const INK_THICK      = 0.0016;  // stroke dilation radius at full wake, in UV units (~3.3 px at 2048).
+                                // Much past 0.002 and dense hatching closes into solid blobs.
+const INK_DARK       = 0.18;    // brightness multiplier under full ink — lower = blacker strokes
+const LIFT_FRAC      = 0.06;    // how far a prop rises at full wake, as a fraction of its height
+// ─── Prop pointer arrow ───────────────────────────────────────────────────────
+// A hand-drawn orange arrow that pops up over a woken prop and points at whatever on it is
+// actually clickable. It is a real quad in the scene, not a DOM overlay — it lives at the spot,
+// tilts with it and holds a constant on-screen size — but it renders in its own group ON TOP of
+// the scene (see makeArrowMesh), so nothing occludes it: not the prop, not terrain, and not the
+// player standing between it and the camera. That is deliberate. It is a wayfinding hint, and a
+// half-buried hint reads as a rendering fault rather than as depth. ARROW_LIFT still nudges it
+// off the prop face so the pop animation reads as coming toward you, but it is no longer what
+// keeps the arrow visible. Six doodles; one is picked at random each time.
+const ARROW_DIR = 'sceneAssets/arrow-assets/';
+const ARROWS = [
+  // tip = where the arrowhead's point sits within the image (0..1, y DOWN).
+  // aim = the direction that point indicates, in degrees, same image space (0 = right, +90 = down).
+  // ar  = the art's width/height. All three are measured off the art by tools/gen_arrows.py.
+  { file: 'arrow_loop.png',     tip: [0.964, 0.062], aim:  -33.2, ar: 274 / 208 },
+  { file: 'arrow_straight.png', tip: [0.976, 0.592], aim:    1.7, ar: 293 / 147 },
+  { file: 'arrow_double.png',   tip: [0.981, 0.608], aim:    5.3, ar: 368 / 120 },
+  { file: 'arrow_curve.png',    tip: [0.069, 0.055], aim: -142.7, ar: 217 / 292 },
+  { file: 'arrow_hook.png',     tip: [0.963, 0.332], aim:    6.0, ar: 298 / 187 },
+  { file: 'arrow_squiggle.png', tip: [0.975, 0.641], aim:    0.4, ar: 285 / 153 },
+];
+// Screen directions the arrow may come in on, in degrees (y DOWN, so these all point downward
+// at the target — i.e. the arrow hangs above its spot and never covers it). One is picked with
+// the shape, so repeat visits don't always look identical.
+const ARROW_APPROACH = [55, 90, 125];
+const ARROW_NEAR   = 375;    // world units: the arrow pops in once the player is this close to the
+                             // SPOT it points at — not to the prop's origin, which on something as
+                             // wide as the barn (460) would fire from off to one side, or refuse to
+                             // fire while you stand at the doors. For scale, the player is 68 tall.
+                             // Wide enough that a prop announces itself from a walk away; the
+                             // closest prop pair is ~600 apart, so two arrows can now share the
+                             // screen — see the approach seeding in updatePropArrows().
+const ARROW_PX     = 0.20;   // on-screen LONGEST EDGE as a fraction of the viewport's short edge…
+const ARROW_PX_MIN = 90;     // …clamped to this many CSS px…
+const ARROW_PX_MAX = 230;    // …and this many. Held constant at every distance by scaling the
+                             // quad in step with its range from the camera — it never zooms.
+const ARROW_GAP    = 16;     // px the tip stands off from the spot, so it doesn't sit on top of it
+const ARROW_LIFT   = 45;     // world units the arrow floats toward the camera, off the prop's face
+// Entrance pop — a damped spring, so it springs past full size and settles through a few
+// decaying bounces rather than overshooting just once.
+const ARROW_POP_MS      = 620;   // how long the whole bounce-out takes
+const ARROW_POP_BOUNCE  = 0.30;  // height of the FIRST overshoot, as a fraction past full size
+const ARROW_POP_WOBBLES = 2.5;   // bounce cycles before it settles; more = busier
+// Decay rate derived from the requested first-overshoot height, so the two knobs stay
+// independent: changing the wobble count doesn't change how far the first bounce throws.
+const ARROW_POP_DECAY = -2 * ARROW_POP_WOBBLES * Math.log(ARROW_POP_BOUNCE);
+const ARROW_FADE_MS   = 110;     // opacity fade-in, kept separate so it doesn't stretch with the bounce
+// Where an arrow points on a prop that has no clickable hot-box of its own, as a fraction of that
+// prop's sheet: x across from the centre (-0.5 … +0.5), y up from the base (0 = ground line,
+// 1 = top edge). Mid-height and a bit: the base line is where the sheet meets the terrain and reads
+// as ground clutter, while the top edge would throw the arrow's body off the art into empty sky.
+// The barn is the exception — it aims at its doors box instead (see barnSpots).
+const ARROW_ANCHOR  = { x: 0, y: 0.55 };
+const ARROW_ANCHORS = {};        // per-prop overrides, same units — e.g. tractor: { x: -0.18, y: 0.42 }
+// The arrow's runtime lives inside the async IIFE below (it needs scene/canvas/mode).
+
 // Auto-crouch: if an upward ray hits a ceiling closer than CROUCH_TRIGGER,
 // shrink the ellipsoid to CROUCH_ELLIPSOID_Y (half-height when crouched).
 // CROUCH_TRIGGER should be a little larger than PLAYER_HEIGHT so the player
@@ -1077,6 +1145,160 @@ scene.activeCamera = isoCamera;
 isoCamera.attachControl(canvas, true);
 let mode = 'iso';
 
+// One arrow quad. Its local axes are driven to match the camera's every frame, so local +X is
+// screen-right and +Y is screen-up; the UVs are laid out for exactly that view. Two-sided and
+// unlit, so winding and normals never matter. Deliberately NOT a shadow caster and NOT pickable:
+// it must cast nothing and never steal a click from the prop it is pointing at.
+//
+// Every arrow gets its OWN material as well as its own quad: the doodle texture and the fade
+// opacity are written per arrow per frame, so a shared material would leave two visible arrows
+// overwriting each other's texture slot and fade phase. The PNGs themselves stay shared (arrowTex).
+// Built eagerly when the prop registers rather than on first sighting — a lazy build would compile
+// the alpha-blend shader permutation on exactly the frame the pop starts, the one frame that must
+// not hitch. A disabled mesh costs no draw call, so idling eight of them is free.
+function makeArrowMesh(i) {
+  const m = new BABYLON.Mesh('propArrow' + i, scene);
+  const vd = new BABYLON.VertexData();
+  vd.positions = [-0.5, -0.5, 0,   0.5, -0.5, 0,   -0.5, 0.5, 0,   0.5, 0.5, 0];
+  vd.uvs       = [ 0, 0,           1, 0,           0, 1,           1, 1];
+  vd.indices   = [0, 1, 2,  1, 3, 2];
+  vd.normals   = [0, 0, -1,  0, 0, -1,  0, 0, -1,  0, 0, -1];
+  vd.applyToMesh(m);
+  // Unlit recipe: the art supplies the colour as baseColor and emissiveColor is a flat
+  // full-bright multiplier over it, so the sprite reads as its own orange in any light.
+  // (Driving it through emissiveTexture instead blows out to white.)
+  const mat = new BABYLON.StandardMaterial('propArrowMat' + i, scene);
+  mat.disableLighting = true;
+  mat.diffuseColor  = new BABYLON.Color3(0, 0, 0);
+  mat.emissiveColor = new BABYLON.Color3(1, 1, 1);
+  mat.specularColor = new BABYLON.Color3(0, 0, 0);
+  mat.useAlphaFromDiffuseTexture = true;
+  mat.backFaceCulling = false;
+  mat.transparencyMode = BABYLON.Material.MATERIAL_ALPHABLEND;
+  m.material = mat;
+  m.isPickable = false;
+  // Draw after the scene, on top of it. The arrow is a pointer affordance, not scene geometry,
+  // and ARROW_LIFT alone cannot keep it clear: the quad is sized in SCREEN px, so at the barn it
+  // is a large world rectangle billboarded at the camera while the barn sheet sits at an angle —
+  // the two planes intersect and the far half gets depth-culled, slicing the doodle into pieces.
+  // Babylon clears depth between rendering groups, so group 1 can never be culled by group 0.
+  m.renderingGroupId = 1;
+  m.rotationQuaternion = BABYLON.Quaternion.Identity();
+  m.setEnabled(false);
+  return { mesh: m, mat };
+}
+// All six up front — they are ~10 KB each, and a lazy load would stall the pop on first sight.
+const arrowTex = {};
+for (const a of ARROWS) {
+  const t = new BABYLON.Texture(ARROW_DIR + a.file, scene, false, true, undefined, null,
+    () => console.warn('arrow PNG failed to load:', a.file));
+  t.hasAlpha = true;
+  arrowTex[a.file] = t;
+}
+
+// Every arrow in the scene, one per clickable spot. `local` is a point in the prop plane's OWN
+// space (x across from centre, y up from base), so the prop's lift, tilt and sway all carry the
+// target along for free — no need to recompute a world position when the prop moves.
+const propArrows = [];       // { mesh, mat, target, local, index, shape, approach, popT0 }
+
+function addPropArrow(target, local) {
+  const { mesh, mat } = makeArrowMesh(propArrows.length);
+  propArrows.push({
+    mesh, mat, target, local,
+    index: propArrows.length,  // fixes this arrow's approach angle — see updatePropArrows()
+    shape: null,               // the ARROWS entry on display; null also means "reroll on next sighting"
+    approach: 90,              // its approach direction, degrees
+    popT0: 0,                  // when the current appearance started, for the entrance pop
+  });
+}
+
+function hidePropArrow(a) { a.mesh.setEnabled(false); a.shape = null; }
+
+// Shared scratch. Safe only because the per-arrow pass below is strictly sequential within a
+// frame — each value is written and consumed inside one iteration, never held across two.
+const _aRight = new BABYLON.Vector3(), _aUp = new BABYLON.Vector3();
+const _aBasis = new BABYLON.Matrix();
+
+function updatePropArrows() {
+  const cam = scene.activeCamera;
+  if (mode !== 'tp' || !cam) { for (const a of propArrows) hidePropArrow(a); return; }
+
+  // Camera basis, eye, viewport and the on-screen size clamp are the same for every arrow this
+  // frame — computed once here rather than once per arrow inside the loop.
+  const camR = cam.getDirection(BABYLON.Axis.X);
+  const camU = cam.getDirection(BABYLON.Axis.Y);
+  const camF = cam.getDirection(BABYLON.Axis.Z);
+  // globalPosition, not position — the third-person view camera is parented to the movement
+  // body, so .position is local to that rig and would put every test in the wrong place.
+  const eye = cam.globalPosition;
+  const cw = canvas.clientWidth, ch = canvas.clientHeight;
+  const px = Math.max(ARROW_PX_MIN, Math.min(ARROW_PX_MAX, Math.min(cw, ch) * ARROW_PX));
+  const now = performance.now();
+
+  for (const a of propArrows) {
+    const spot = BABYLON.Vector3.TransformCoordinates(a.local, a.target.getWorldMatrix());
+    // Distance from the PLAYER (not the trailing view camera) to the spot itself.
+    if (BABYLON.Vector3.Distance(tpCamera.position, spot) > ARROW_NEAR) { hidePropArrow(a); continue; }
+    if (spot.subtract(eye).dot(camF) <= 1) { hidePropArrow(a); continue; }   // at or behind the eye
+
+    // First frame of a fresh appearance — reroll the doodle and start the entrance pop. The SIDE
+    // it comes in on is fixed per arrow rather than rerolled: at this range two neighbouring props
+    // can both be showing, and rolling the approach independently lets them land on the same angle
+    // and read as a matched pair. Indexing fans them apart instead.
+    if (!a.shape) {
+      a.shape = ARROWS[(Math.random() * ARROWS.length) | 0];
+      a.approach = ARROW_APPROACH[a.index % ARROW_APPROACH.length];
+      a.mat.diffuseTexture = arrowTex[a.shape.file];
+      a.popT0 = now;
+      a.mesh.setEnabled(true);
+    }
+
+    // Float the arrow off the prop's face, toward the camera, so the prop can never swallow it.
+    const toEye = eye.subtract(spot);
+    const tip = spot.add(toEye.scale(ARROW_LIFT / toEye.length()));
+    const range = BABYLON.Vector3.Distance(eye, tip);
+
+    // World units per screen pixel at the arrow's range. Babylon's default fovMode is
+    // VERTICAL_FIXED, so the vertical extent is what the fov describes.
+    const perPx = 2 * range * Math.tan(cam.fov / 2) /
+                  (cam.fovMode === BABYLON.Camera.FOVMODE_HORIZONTAL_FIXED ? cw : ch);
+
+    // Entrance pop: a damped spring from nothing — springs past full size, then bounces down and
+    // up through decreasing swings. Pinned to exactly 1 past the duration, so the arrow holds its
+    // size from then on and never drifts.
+    const since = now - a.popT0;
+    const t = since / ARROW_POP_MS;
+    const pop = t >= 1 ? 1
+              : 1 - Math.exp(-ARROW_POP_DECAY * t) * Math.cos(2 * Math.PI * ARROW_POP_WOBBLES * t);
+    // Normalise on the longest edge so every doodle takes up a comparable amount of screen.
+    const ar = a.shape.ar;
+    const longPx = px * pop;
+    const w = (ar >= 1 ? longPx : longPx * ar) * perPx;
+    const h = (ar >= 1 ? longPx / ar : longPx) * perPx;
+    a.mat.alpha = Math.min(1, since / ARROW_FADE_MS);
+
+    // Camera-aligned basis, rolled so the arrowhead indicates the approach direction. Screen y
+    // runs DOWN while camU runs up, hence the sign pattern. Cross(right, up) stays camF through
+    // any roll in that plane, so this remains a valid orthonormal basis.
+    const phi = (a.approach - a.shape.aim) * Math.PI / 180;
+    const cp = Math.cos(phi), sp = Math.sin(phi);
+    _aRight.copyFrom(camR).scaleInPlace(cp).subtractInPlace(camU.scale(sp));
+    _aUp.copyFrom(camR).scaleInPlace(sp).addInPlace(camU.scale(cp));
+    BABYLON.Matrix.FromXYZAxesToRef(_aRight, _aUp, camF, _aBasis);
+    BABYLON.Quaternion.FromRotationMatrixToRef(_aBasis, a.mesh.rotationQuaternion);
+
+    // Stand the tip off from the spot, back along the direction it points, so it indicates the
+    // spot without covering it. Then place the quad's centre such that its tip lands there.
+    const app = a.approach * Math.PI / 180;
+    tip.subtractInPlace(camR.scale(Math.cos(app)).subtract(camU.scale(Math.sin(app)))
+                            .scale(ARROW_GAP * perPx));
+    a.mesh.position.copyFrom(tip)
+      .subtractInPlace(_aRight.scale((a.shape.tip[0] - 0.5) * w))
+      .subtractInPlace(_aUp.scale((0.5 - a.shape.tip[1]) * h));
+    a.mesh.scaling.set(w, h, 1);
+  }
+}
+
 // Wheel zoom is handled natively by Babylon's ArcRotateCameraMouseWheelInput
 // for both cameras. No manual override needed.
 
@@ -1127,8 +1349,29 @@ let islandCX = 0, islandCZ = 0, islandR = 2000;   // blob centre + radius (set a
 let islandFloorY = -1e9;          // lowest terrain Y; below this the player has fallen off
 let fallTime = 0;                 // seconds the player has been below the terrain
 let spawnPoint = null;            // saved spawn position, for respawn after falling
-const propLinks = [];   // { prop, url, opened } — touch a prop in third person → open its page once
+const propLinks = [];   // { prop, action } — click a linked prop in third person → run its action
 
+// Hover cursor. `pickAction` is installed by the props block once the scene is built; it answers
+// "would a click on this pick do anything?" and is the SAME test the tap handler runs, so the
+// cursor can never promise a click that does nothing. Re-tested every frame rather than on
+// mousemove, because what is clickable also changes without the mouse moving at all — stepping
+// between overview and third person flips every prop live or inert under a held-still cursor.
+let pickAction = null;
+let hoverOn = false;
+function updateHoverCursor() {
+  if (IS_MOBILE || !pickAction) return;     // no hover on touch, and nothing to test before load
+  // && short-circuits, so outside third person the per-frame raycast is skipped entirely — and
+  // hoverOn still falls to false, which clears a hand left showing when the mode changed.
+  const on = mode === 'tp' && !!pickAction(scene.pick(scene.pointerX, scene.pointerY));
+  if (on === hoverOn) return;               // only touch the DOM when it actually changes
+  hoverOn = on;
+  // Babylon's InputManager resets the canvas cursor to scene.defaultCursor on EVERY pointermove,
+  // so writing canvas.style.cursor on its own is stomped the instant the mouse travels and the
+  // change-check above then never re-applies it — the hand blinks off and stays off. Driving
+  // defaultCursor means Babylon's own reset paints the value we want, and nothing fights.
+  scene.defaultCursor = on ? 'pointer' : '';
+  canvas.style.cursor = scene.defaultCursor;
+}
 // Current gust event. Calm between gusts (strength 0). updateWind() schedules them; getWind()
 // reads the active gust as a front sweeping across the island.
 const windGust = { active: false, t0: 0, dur: 0, dir: WIND_DIR0,
@@ -1213,8 +1456,8 @@ function flashWindOverlay(peak) {
 // (anywhere but a photo) to close.
 //
 // Open a folder with openPhotoPopup('<folder name>') — e.g. openPhotoPopup('Rojo').
-// The haystack currently opens 'Stay Home Safe Secure'; wire the other folders to any
-// prop click or menu link the same way (see the pointer handler below).
+// Most of these hang off a scene prop; see PROP_ACTIONS in the prop-links block below for
+// which prop opens which folder. Wire a menu link to a folder the same way.
 //
 // NOTE: static site (no directory listing) — VIDEO_COLLECTIONS is generated from the real
 // filenames + the "Video Link List" PDF by gameV2/tools/gen_video_collections.py. Re-run
@@ -1418,36 +1661,40 @@ function buildVerticalPlane(name, W, H, segsX, segsY) {
   return mesh;
 }
 
-// ── Coloring-book fill plugin ──────────────────────────────────────────────────
-// Reveals a pre-painted orange "fill" texture over a poster's StandardMaterial as the
-// player nears. The fill PNG (see gameV2/tools/gen_fills.py) is flat orange between the
-// pencil lines and transparent on the strokes, so the drawing "colours in" while the lines
-// still show on top. Driven per-frame by uGlowAmt (proximity 0..1) and uTime (subtle pulse).
-class GlowSpotsPlugin extends BABYLON.MaterialPluginBase {
+// ── Wake-up effect plugin ─────────────────────────────────────────────────────
+// As the player nears a prop it "wakes": the pencil strokes darken and thicken, as if the
+// drawing were being gone over again with a heavier hand. Driven per-frame by uWake — the
+// proximity ramp, 0..1. The other half of the effect (the sheet lifting off the ground so its
+// shadow slides out from under it) is a plain transform, applied in the render loop.
+//
+// Thickening works by DILATING the strokes: sample a ring around the fragment in the prop's own
+// diffuse texture and keep the inkiest hit, so a stroke bleeds outward by up to INK_THICK. Each
+// tap is weighted by its alpha, else the transparent area outside the torn-paper cutout would
+// smear a dark rim just inside the edge. Re-sampling the prop's own art means the effect needs
+// no second image to author, load or keep in sync.
+class InkWakePlugin extends BABYLON.MaterialPluginBase {
   constructor(material) {
-    super(material, 'GlowSpots', 200, { GLOWSPOTS: false });
-    this.glowAmt = 0;
-    this.time = 0;
-    this.pulseSpeed = 0.7;                  // slow base rate for the irregular fill pulse
-    this.color = new BABYLON.Color3(1.0, 0.33, 0.0);   // fill colour (#ff5400); the fill PNG supplies only the mask
-    this.shineGain = 0.7;                   // strength of the travelling shine (0 = off)
-    this.fillTexture = null;                // BABYLON.Texture: the painted fill-layer (alpha = where to colour)
+    super(material, 'InkWake', 200, { INKWAKE: false });
+    this.wake = 0;                          // 0..1, set from the prop's proximity ramp
+    this.thick = INK_THICK;
+    this.dark = INK_DARK;
+    this.aspect = 1;                        // texture w/h, so the dilation ring stays round in pixels
+    this.inkTexture = null;                 // the prop's own diffuse texture, re-sampled for dilation
     this._enable(true);
   }
-  getClassName() { return 'GlowSpotsPlugin'; }
-  prepareDefines(defines) { defines.GLOWSPOTS = true; }
-  getSamplers(samplers) { samplers.push('uFillSampler'); }
+  getClassName() { return 'InkWakePlugin'; }
+  prepareDefines(defines) { defines.INKWAKE = true; }
+  getSamplers(samplers) { samplers.push('uInkSampler'); }
   getUniforms() {
     return {
       ubo: [
-        { name: 'uGlowAmt',    size: 1, type: 'float' },
-        { name: 'uTime',       size: 1, type: 'float' },
-        { name: 'uPulseSpeed', size: 1, type: 'float' },
-        { name: 'uShineGain',  size: 1, type: 'float' },
-        { name: 'uGlowColor',  size: 3, type: 'vec3'  },
+        { name: 'uWake',      size: 1, type: 'float' },
+        { name: 'uInkThick',  size: 1, type: 'float' },
+        { name: 'uInkDark',   size: 1, type: 'float' },
+        { name: 'uInkAspect', size: 1, type: 'float' },
       ],
-      fragment: `#ifdef GLOWSPOTS
-        uniform float uGlowAmt; uniform float uTime; uniform float uPulseSpeed; uniform float uShineGain; uniform vec3 uGlowColor;
+      fragment: `#ifdef INKWAKE
+        uniform float uWake; uniform float uInkThick; uniform float uInkDark; uniform float uInkAspect;
       #endif`,
     };
   }
@@ -1455,50 +1702,57 @@ class GlowSpotsPlugin extends BABYLON.MaterialPluginBase {
     if (shaderType !== 'fragment') return null;
     return {
       // Sampler must be declared here (definitions block) — Babylon does not emit it from
-      // getUniforms().fragment, which left uFillSampler undeclared at the texture2D call.
-      CUSTOM_FRAGMENT_DEFINITIONS: `#ifdef GLOWSPOTS
-        uniform sampler2D uFillSampler;
+      // getUniforms().fragment, which would leave uInkSampler undeclared at the texture2D call.
+      CUSTOM_FRAGMENT_DEFINITIONS: `#ifdef INKWAKE
+        uniform sampler2D uInkSampler;
+        // Inkiness at a UV: 1 = solid stroke, 0 = blank paper. The smoothstep keeps near-white
+        // paper at exactly 0 so the effect can't dull the whole sheet, and the alpha factor makes
+        // everything outside the cutout read as "no ink" so it cannot bleed inward.
+        float inkAt(vec2 uv) {
+          vec4 s = texture2D(uInkSampler, uv);
+          float l = dot(s.rgb, vec3(0.299, 0.587, 0.114));
+          return smoothstep(0.85, 0.35, l) * s.a;
+        }
       #endif`,
-      CUSTOM_FRAGMENT_BEFORE_FRAGCOLOR: `#ifdef GLOWSPOTS
-        if (uGlowAmt > 0.001) {
+      CUSTOM_FRAGMENT_BEFORE_FRAGCOLOR: `#ifdef INKWAKE
+        if (uWake > 0.001) {
           #ifdef MAINUV1
-            vec2 fuv = vMainUV1;
+            vec2 iuv = vMainUV1;
           #else
-            vec2 fuv = vDiffuseUV;
+            vec2 iuv = vDiffuseUV;
           #endif
-          vec4 fillSample = texture2D(uFillSampler, fuv);
-          // The fill PNG supplies only a mask (its alpha = where to colour); the colour comes
-          // from uGlowColor. Slow, irregular pulse — two non-harmonic sines so the timing varies
-          // rather than ticking on a steady beat.
-          float pulse  = 0.5 + 0.25 * sin(uTime * uPulseSpeed) + 0.25 * sin(uTime * uPulseSpeed * 0.61 + 1.7);
-          // Cap the fill well below solid so it stays translucent; its opacity hovers within the
-          // pulse band instead of reaching full opacity.
-          float reveal = uGlowAmt * (0.42 + 0.18 * pulse);
-          color.rgb = mix(color.rgb, uGlowColor, fillSample.a * reveal);
-          // Shine: a steady white glow over the whole painted region, strong while the fill is
-          // still faint (far away) and fading to nothing as the fill solidifies (close).
-          // (1.0 - reveal) ties it inversely to fill opacity; fadeIn softens the far-edge pop.
-          float fadeIn = smoothstep(0.0, 0.15, uGlowAmt);
-          float shine  = fillSample.a * (1.0 - reveal) * fadeIn * uShineGain;
-          color.rgb += vec3(1.0) * shine;   // pure white, unsaturated — matches the scene light
+          // Ring of 8 taps at the current dilation radius. v is scaled by the texture aspect so
+          // the ring is a circle in pixel space rather than an ellipse.
+          vec2 r = vec2(1.0, uInkAspect) * uInkThick * uWake;
+          float ink = inkAt(iuv);
+          ink = max(ink, inkAt(iuv + vec2( r.x,  0.0)));
+          ink = max(ink, inkAt(iuv + vec2(-r.x,  0.0)));
+          ink = max(ink, inkAt(iuv + vec2( 0.0,  r.y)));
+          ink = max(ink, inkAt(iuv + vec2( 0.0, -r.y)));
+          ink = max(ink, inkAt(iuv + vec2( r.x,  r.y) * 0.707));
+          ink = max(ink, inkAt(iuv + vec2( r.x, -r.y) * 0.707));
+          ink = max(ink, inkAt(iuv + vec2(-r.x,  r.y) * 0.707));
+          ink = max(ink, inkAt(iuv + vec2(-r.x, -r.y) * 0.707));
+          // Darken toward near-black wherever the (now thicker) ink lands: existing strokes go
+          // heavier, and freshly dilated paper becomes new stroke.
+          color.rgb = mix(color.rgb, color.rgb * uInkDark, ink * uWake);
         }
       #endif`,
     };
   }
   bindForSubMesh(uniformBuffer) {
-    uniformBuffer.updateFloat('uGlowAmt', this.glowAmt);
-    uniformBuffer.updateFloat('uTime', this.time);
-    uniformBuffer.updateFloat('uPulseSpeed', this.pulseSpeed);
-    uniformBuffer.updateFloat('uShineGain', this.shineGain);
-    uniformBuffer.updateColor3('uGlowColor', this.color);
-    if (this.fillTexture) uniformBuffer.setTexture('uFillSampler', this.fillTexture);
+    uniformBuffer.updateFloat('uWake', this.wake);
+    uniformBuffer.updateFloat('uInkThick', this.thick);
+    uniformBuffer.updateFloat('uInkDark', this.dark);
+    uniformBuffer.updateFloat('uInkAspect', this.aspect);
+    if (this.inkTexture) uniformBuffer.setTexture('uInkSampler', this.inkTexture);
   }
 }
 
 // Create a ground PNG poster that sways in the wind. style 'lean' (rigid tip about the base) or
 // 'bend' (foliage-like top wave). Seats its base on the terrain at (x,z) and registers for sway.
 function addGroundPng(url, opts) {
-  const { x, z, height, aspect, style, tilt = 0, fill = null } = opts;   // tilt = static lean about local Z (radians); fill = orange coloring-book layer
+  const { x, z, height, aspect, style, tilt = 0, fx = false } = opts;   // tilt = static lean about local Z (radians); fx = wake-up effect on approach
   const W = height * aspect, H = height;
 
   const tex = new BABYLON.Texture(url, scene, false, true, undefined, null,
@@ -1512,14 +1766,13 @@ function addGroundPng(url, opts) {
   mat.transparencyMode = BABYLON.Material.MATERIAL_ALPHABLEND;
   shadowGen.transparencyShadow = true;   // alpha cutout casts a shaped shadow
 
-  // Coloring-book fill: reveal a pre-painted orange layer (gen_fills.py) as the player nears.
-  let glow = null;
-  if (fill) {
-    const fillTex = new BABYLON.Texture(fill, scene, false, true, undefined, null,
-      () => console.warn('fill PNG failed to load:', fill));
-    fillTex.hasAlpha = true;
-    glow = new GlowSpotsPlugin(mat);
-    glow.fillTexture = fillTex;
+  // Wake-up effect: darken and thicken this prop's ink as the player nears. It re-samples the
+  // prop's own texture, so there is no companion image to author or load.
+  let wake = null;
+  if (fx) {
+    wake = new InkWakePlugin(mat);
+    wake.inkTexture = tex;
+    wake.aspect = aspect;
   }
 
   const ray = new BABYLON.Ray(new BABYLON.Vector3(x, 5000, z), new BABYLON.Vector3(0, -1, 0), 10000);
@@ -1541,7 +1794,7 @@ function addGroundPng(url, opts) {
     mesh.position.set(0, 0, 0);                  // verts Y 0..H → base sits at the pivot
     mesh.rotation.z = tilt;                      // static lean about Z (base stays planted), for variety
     const rest = mesh.getVerticesData(BABYLON.VertexBuffer.PositionKind).slice();
-    windPlanes.push({ mesh, pivot, style, phase, H, W, rest, glow });
+    windPlanes.push({ mesh, pivot, style, phase, H, W, rest, wake, baseY: gY, lift: H * LIFT_FRAC, prox: 0 });
     return mesh;
   } else {
     const plane = BABYLON.MeshBuilder.CreatePlane('gpngLean', { width: W, height: H }, scene);
@@ -1554,7 +1807,7 @@ function addGroundPng(url, opts) {
     plane.parent = pivot;
     plane.position.set(0, H / 2, 0);             // lift so the plane's bottom edge sits at the pivot
     plane.rotation.z = tilt;                     // static lean about Z, for variety
-    windPlanes.push({ pivot, style, phase, H, glow });
+    windPlanes.push({ pivot, style, phase, H, wake, baseY: gY, lift: H * LIFT_FRAC, prox: 0 });
     return plane;
   }
 }
@@ -1930,40 +2183,114 @@ BABYLON.SceneLoader.ImportMesh('', 'https://static.wixstatic.com/3d/', '863c39_f
     spawnPoint = tpCamera.position.clone();   // remembered for respawn after falling off
     console.log('player spawned at', tpCamera.position.toString(), 'groundY:', groundY);
 
-    // ─── Scene props — barn in the centre, others arranged around it per the reference sketch ───
-    // Offsets are fractions of islandR (kept within half-radius). All are 'paper' (wind-rippling) posters
-    // facing +Z (toward the player's start), each slightly tilted about Z for dimensional variety.
+    // ─── Scene props — barn in the centre, others scattered around it per the reference sketch ───
+    // Offsets are fractions of R, so the whole layout scales with the island. All are 'paper'
+    // (wind-rippling) posters facing +Z (toward the player's start), each slightly tilted about Z
+    // for dimensional variety.
     // Left/right: +X is the viewer's left (sketch left). If it reads mirrored, flip the X signs.
-    const R = islandR * 0.55;   // spread — distance of props from centre (smaller = closer together)
-    // Orange coloring-book fills are pre-painted by gameV2/tools/gen_fills.py (barn = its 4
-    // feature regions; the rest fill whole). Re-run that script after editing the source art.
-    const barnProp = addGroundPng('sceneAssets/barn-silo.png', { x: islandCX,          z: islandCZ,          height: 320, aspect: 1891 / 1316, style: 'paper', tilt:  0,
-      fill: 'sceneAssets/barn-silo-fill.png' });
-    const treeProp = addGroundPng('sceneAssets/tree-tractor.png', { x: islandCX + 0.35*R, z: islandCZ + 0.18*R, height: 340, aspect: 1086 / 1384, style: 'paper', tilt:  0.03,
-      fill: 'sceneAssets/tree-tractor-fill.png' });
-    const haystackProp = addGroundPng('sceneAssets/haystack.png', { x: islandCX - 0.30*R, z: islandCZ - 0.12*R, height: 120, aspect: 393 / 387,   style: 'paper', tilt: -0.04,
-      fill: 'sceneAssets/haystack-fill.png' });
-    addGroundPng('sceneAssets/route-cellar.png', { x: islandCX - 0.40*R, z: islandCZ + 0.25*R, height: 100, aspect: 746 / 304,   style: 'paper', tilt:  0.025,
-      fill: 'sceneAssets/route-cellar-fill.png' });
-    // Prop links — tied to the fill layer and triggered by CLICK only (the old proximity/collision
-    // trigger is gone). A prop is clickable only while its orange fill is showing (player near
-    // enough that glowAmt is up); clicking elsewhere or on an unlit prop does nothing.
-    const findGlow = (prop) => { const wp = windPlanes.find(w => w.mesh === prop); return wp ? wp.glow : null; };
-    // Whole-prop links (one mesh → one URL).
-    propLinks.push({ prop: treeProp, glow: findGlow(treeProp), url: 'https://siennabroglie.wixsite.com/my-site-1/nonprofits', newTab: true });
+    // Keep every prop inside ~0.80·R of the centre: the coastline is a blob whose radius dips to
+    // roughly 0.6·islandR (= 0.8·R) in the bays, and a prop placed past it finds no ground under
+    // the seating raycast and falls back to y = 0 (floating or buried). The tractor sits past that
+    // at 0.95·R because the reference screenshot puts it there, on a headland rather than a bay --
+    // if the blob's shape is ever re-rolled, that is the first prop to re-check.
+    const R = islandR * 0.75;   // spread — distance of props from centre (smaller = closer together)
 
-    // Barn — each painted fill spot is its own linked object. A click on the barn is routed by
-    // the UV it hit to whichever spot's box (in fill-image UV) contains it. box = [u0,v0,u1,v1].
-    // Set url: null to leave a spot unlinked (placeholder). Re-run gen/repaint won't change these.
-    const barnGlow = findGlow(barnProp);
-    const haystackGlow = findGlow(haystackProp);   // haystack fill opens the Stay Home Safe Secure popup
-    const barnSpots = [
-      { name: 'doors',         box: [0.57, 0.68, 0.78, 0.99], url: 'https://www.youtube.com/@borg22222/featured', newTab: true },
-      { name: 'cupola',        box: [0.32, 0.06, 0.49, 0.24], url: null, newTab: true },   // TODO: set URL
-      { name: 'rightWindow',   box: [0.74, 0.29, 0.84, 0.46], url: null, newTab: true },   // TODO: set URL
-      { name: 'leanToWindows', box: [0.01, 0.70, 0.21, 0.84], url: null, newTab: true },   // TODO: set URL
+    // ONE world scale for the whole prop set. The art is all drawn to a common scale, so each
+    // prop's height falls out of its own art height in pixels — that is what keeps them in
+    // proportion to each other. The barn anchors it: its art is 2806 px tall and reads at 320
+    // world units (the size we want to keep), hence 320/2806 units per art-pixel.
+    // px[] is the size of the ORIGINAL delivered art (kept in interactive-assets/_originals),
+    // deliberately NOT the size of the downscaled file we actually ship — so re-exporting at a
+    // different resolution can never silently change how big a prop reads in-game.
+    // fx: true gives a prop the wake-up effect on approach (ink darkens & thickens, sheet lifts
+    // off the ground). Currently the barn only, while we settle on the look — every prop still
+    // gets a proximity ramp regardless, so switching one on is a one-word edit here.
+    const ART_UNITS_PER_PX = 320 / 2806;
+    const PROP_DIR = 'sceneAssets/interactive-assets/';
+    const SCENE_PROPS = [
+      // The barn anchors the layout at the centre; the rest are fanned out around it on distinct
+      // bearings at varied radii, so no two read as a clump from any approach angle. The current
+      // spots for routeCellar / tractor / wheelBarrow / toxicBarrels come from the 2026-08-20
+      // marked-up overview screenshot — each was read off the circle drawn on that render.
+      // name              file                    art px         x·R      z·R    tilt      fx
+      { name:'barn',         file:'barn.png',         px:[4033,2806], x: 0.00, z: 0.00, tilt: 0,     fx:true  },
+      { name:'tree',         file:'tree.png',         px:[2308,3356], x: 0.37, z: 0.21, tilt: 0.03,  fx:false },
+      { name:'haystack',     file:'haystack.png',     px:[ 943, 929], x:-0.35, z:-0.19, tilt:-0.04,  fx:false },
+      { name:'routeCellar',  file:'routeCellar.png',  px:[1412, 576], x:-0.60, z: 0.41, tilt: 0.025, fx:false },   // pushed out toward the near-left coast
+      { name:'tractor',      file:'tractor.png',      px:[1836,1287], x: 0.94, z:-0.12, tilt:-0.02,  fx:false },   // past the tree, out on the far-right shoulder — the widest prop in the set at 0.95·R
+      { name:'wheelBarrow',  file:'wheelBarrow.png',  px:[1094, 639], x:-0.30, z: 0.72, tilt: 0.04,  fx:false },   // off the walk-in path to the left, out past the spawn point
+      { name:'toxicBarrels', file:'toxicBarrels.png', px:[1079, 817], x: 0.31, z:-0.68, tilt:-0.03,  fx:false },   // round the back of the barn and further off, hidden on approach
+      { name:'boat',         file:'boat.png',         px:[1935, 822], x:-0.42, z:-0.60, tilt: 0.05,  fx:false },   // out toward the coastline, beached
     ];
-    const openLink = (url, newTab) => { if (!url) return; if (newTab) window.open(url, '_blank'); else window.location.href = url; };
+    const props = {}, propSize = {};
+    for (const p of SCENE_PROPS) {
+      const aspect = p.px[0] / p.px[1];
+      const H = p.px[1] * ART_UNITS_PER_PX, W = H * aspect;
+      propSize[p.name] = { W, H };
+      props[p.name] = addGroundPng(PROP_DIR + p.file, {
+        x: islandCX + p.x * R,  z: islandCZ + p.z * R,
+        height: H, aspect, style: 'paper', tilt: p.tilt, fx: p.fx,
+      });
+    }
+    const barnProp = props.barn;
+    // ─── Prop links ───────────────────────────────────────────────────────────────────────────
+    // Triggered by CLICK only (the old proximity/collision trigger is gone). A linked prop is
+    // clickable from any range you can see it at — no proximity gate, so the pointing hand can
+    // promise a click anywhere the prop is on screen. Third person only, though: the overview is
+    // a map, and clicking a prop from up there does nothing (see pickAction below).
+    //
+    // An action is either { popup: '<videoAssets folder>' } — the floating photo grid built by
+    // openPhotoPopup() out of VIDEO_COLLECTIONS — or { url, newTab } for a plain link out.
+    // The barn is the one prop routed per-spot rather than as a whole sheet, so its action hangs
+    // off barnSpots below; every other prop takes its action straight from this table.
+    // Still unspoken for, if more props ever want one: Just Borg, Make A Joyful Noise,
+    // Nick At Home, Rojo.
+    const PROP_ACTIONS = {
+      boat:         { popup: 'Vote Mail Is Easy' },
+      haystack:     { popup: 'Nonprofits' },
+      routeCellar:  null,                                    // TODO: web link to be supplied — inert until then
+      toxicBarrels: { popup: 'Stay Home Safe Secure' },
+      tractor:      { popup: 'Orange Man Adventure Theatre' },
+      tree:         { popup: 'Mom My Straightman' },
+      wheelBarrow:  { popup: 'Games' },
+    };
+    for (const [name, action] of Object.entries(PROP_ACTIONS)) {
+      if (!props[name]) continue;
+      // A null action is inert — nothing to click yet — but the prop still gets its arrow, so the
+      // set reads as uniformly interactive while its link is outstanding.
+      if (action) propLinks.push({ prop: props[name], action });
+      const an = ARROW_ANCHORS[name] || ARROW_ANCHOR, size = propSize[name];
+      addPropArrow(props[name], new BABYLON.Vector3(an.x * size.W, an.y * size.H, 0));
+    }
+
+    // Barn — a click is routed by the UV it hit to whichever spot's box contains it.
+    // box = [u0,v0,u1,v1] in image UV, v measured DOWN from the top of the art.
+    // The double doors are the only linked spot; add more rows here to light up other features.
+    const barnSpots = [
+      { name: 'doors', box: [0.57, 0.68, 0.78, 0.99], action: { popup: 'Trailers' } },
+    ];
+    // Point the pop-up arrow at the doors. Convert the spot's box centre from image UV into the
+    // plane's own local space: u runs straight across (u=0 at x=-W/2), while the box's v runs DOWN
+    // the image and the mesh's y runs UP from the base — hence the 1 - v.
+    const spotAnchor = (box, size) => new BABYLON.Vector3(
+      ((box[0] + box[2]) / 2 - 0.5) * size.W,
+      (1 - (box[1] + box[3]) / 2) * size.H,
+      0);
+    // The barn is routed per-spot, so each linked spot gets its own arrow rather than one for the
+    // whole sheet. One spot today; a second row in barnSpots would light up its own arrow for free.
+    for (const bs of barnSpots) if (bs.action) addPropArrow(barnProp, spotAnchor(bs.box, propSize.barn));
+    // One entry point for both action shapes, so the barn's spots and the whole-prop table stay
+    // interchangeable — swapping either one between a popup and a link is a one-word edit.
+    const runAction = (a) => {
+      if (!a) return;
+      if (a.popup) { openPhotoPopup(a.popup); return; }
+      if (!a.url) return;
+      if (a.newTab) window.open(a.url, '_blank'); else window.location.href = a.url;
+    };
+    // Catch a folder renamed on disk but not here (or vice versa) at load, not on the click.
+    for (const a of [...Object.values(PROP_ACTIONS), ...barnSpots.map(s => s.action)]) {
+      if (a && a.popup && !VIDEO_COLLECTIONS[a.popup]) console.warn('prop popup has no videoAssets collection:', a.popup);
+    }
     const resolveBarnSpot = (u, v) => {
       // Try the UV and its flips so this is robust to the texture's invertY / view-side mirroring;
       // the barn's spots are small and far apart, so a flipped coord never lands in the wrong box.
@@ -1975,27 +2302,25 @@ BABYLON.SceneLoader.ImportMesh('', 'https://static.wixstatic.com/3d/', '863c39_f
       return null;
     };
 
+    // The action a pick lands on, or null. Both the tap and the hover cursor go through here, so
+    // the pointing hand and the click can never disagree about what is live.
+    pickAction = (info) => {
+      if (mode !== 'tp') return null;                       // props are live only out on the farm
+      const picked = info && info.pickedMesh;
+      if (!picked) return null;
+      if (picked === barnProp) {                            // per-spot routing
+        const uv = info.getTextureCoordinates ? info.getTextureCoordinates() : null;
+        if (!uv) return null;
+        const spot = resolveBarnSpot(uv.x, uv.y);
+        return spot ? spot.action : null;
+      }
+      const L = propLinks.find(l => l.prop === picked);     // whole-prop links
+      return L ? L.action : null;                           // unlinked props stay inert
+    };
+
     scene.onPointerObservable.add((pi) => {
       if (pi.type !== BABYLON.PointerEventTypes.POINTERTAP) return;   // a click/tap (not a drag-rotate)
-      const info = pi.pickInfo; const picked = info && info.pickedMesh;
-      if (!picked) return;
-      if (picked === barnProp) {                       // per-spot routing
-        if (barnGlow && barnGlow.glowAmt < 0.05) return;   // only while the fill is lit
-        const uv = info.getTextureCoordinates ? info.getTextureCoordinates() : null;
-        if (!uv) return;
-        const spot = resolveBarnSpot(uv.x, uv.y);
-        if (spot) openLink(spot.url, spot.newTab);
-        return;
-      }
-      if (picked === haystackProp) {                   // haystack fill → Stay Home Safe Secure popup
-        if (haystackGlow && haystackGlow.glowAmt < 0.05) return;   // only while the fill is lit
-        openPhotoPopup('Stay Home Safe Secure');
-        return;
-      }
-      const L = propLinks.find(l => l.prop === picked);   // whole-prop links
-      if (!L) return;
-      if (L.glow && L.glow.glowAmt < 0.05) return;
-      openLink(L.url, L.newTab);
+      runAction(pickAction(pi.pickInfo));
     });
 
     applyModeVisibility();   // game starts in overview → show the drawing-ground, hide the 3D scene
@@ -2459,11 +2784,21 @@ engine.runRenderLoop(() => {
   for (let i = 0; i < windPlanes.length; i++) {
     const wp = windPlanes[i];
     const node = wp.pivot || wp.mesh;
-    // Region glow — ramp up the orange hotspots as the player approaches this poster.
-    if (wp.glow) {
-      const gd = BABYLON.Vector3.Distance(tpCamera.position, node.position);
-      wp.glow.glowAmt = 1 - BABYLON.Scalar.Clamp((gd - GLOW_NEAR) / (GLOW_FAR - GLOW_NEAR), 0, 1);
-      wp.glow.time = windT;
+    // Proximity ramp — how "awake" this prop is (0..1) as the player approaches. Every prop gets
+    // one, but only props built with fx render the wake-up effect off it. It no longer gates
+    // clicks: a linked prop is clickable at any range (see pickAction).
+    // Measured from the prop's RESTING height, so lifting it can't feed back into its own ramp.
+    const dx = tpCamera.position.x - node.position.x;
+    const dy = tpCamera.position.y - wp.baseY;
+    const dz = tpCamera.position.z - node.position.z;
+    const gd = Math.sqrt(dx * dx + dy * dy + dz * dz);
+    wp.prox = 1 - BABYLON.Scalar.Clamp((gd - PROX_NEAR) / (PROX_FAR - PROX_NEAR), 0, 1);
+    if (wp.wake) {
+      const a = wp.prox * wp.prox * (3 - 2 * wp.prox);   // smoothstep — eases in at both ends
+      wp.wake.wake = a;
+      node.position.y = wp.baseY + wp.lift * a;          // lift off the page; the sun sits well
+                                                         // off vertical, so the cast shadow
+                                                         // slides out from under the sheet
     }
     const w = getWind(windT, node.position.x, node.position.z);
     const flutter = 0.7 + 0.5 * Math.sin(windT * 2.0 + wp.phase) + 0.2 * Math.sin(windT * 3.3 + wp.phase * 1.7);
@@ -2498,6 +2833,9 @@ engine.runRenderLoop(() => {
       wp.mesh.updateVerticesData(BABYLON.VertexBuffer.PositionKind, pos);
     }
   }
+
+  updatePropArrows();  // aim the pop-up arrows (after the wp loop above: it moves the props they track)
+  updateHoverCursor(); // …and show the pointing hand if the mouse is resting on something live
 
   // Prevent collision slide-response from pushing the player upward.
   // moveWithCollisions computes a slide vector along the hit surface normal;
