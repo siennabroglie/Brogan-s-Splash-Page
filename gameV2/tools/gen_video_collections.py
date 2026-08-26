@@ -1,16 +1,27 @@
 #!/usr/bin/env python3
 """Generate the VIDEO_COLLECTIONS JS literal for index.html.
 
-Reads the real PNG filenames from gameV2/videoAssets/<Folder>/ (so the `img`
+Reads the real WebP filenames from gameV2/videoAssets/<Folder>/ (so the `img`
 strings match disk byte-for-byte, curly apostrophes and colons included) and
 pairs each file with its title (alt text) + YouTube URL transcribed from
 "Video Link List.pdf". Matching is by fuzzy similarity within each folder, so
 the on-disk name and the PDF title don't have to be identical.
 
+Each row also carries the image's intrinsic w/h. buildPhotoGrid() puts those on
+the <img> so the grid reserves the right box BEFORE the file arrives — without
+them the cell is zero-height under `width:100%; height:auto`, and the float
+animation, which measures getBoundingClientRect() 600ms after opening, starts
+from collapsed rects and the grid jumps as images land.
+
+Thumbnails are produced by prep_video_thumbs.py; run that first if you have
+dropped in fresh PNG exports.
+
 Run:  python3 gameV2/tools/gen_video_collections.py
 Paste the printed block into index.html where VIDEO_COLLECTIONS is defined.
 """
 import os, json, difflib
+
+from PIL import Image
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ASSETS = os.path.normpath(os.path.join(HERE, '..', 'videoAssets'))
@@ -105,7 +116,7 @@ def norm(s):
 
 
 def match_folder(folder, entries):
-    files = sorted(f for f in os.listdir(os.path.join(ASSETS, folder)) if f.lower().endswith('.png'))
+    files = sorted(f for f in os.listdir(os.path.join(ASSETS, folder)) if f.lower().endswith('.webp'))
     # Build a score matrix, then greedily take the best file<->entry pair each round.
     pairs = []
     for fi, f in enumerate(files):
@@ -133,7 +144,9 @@ def main():
         for fname, title, url, score in matched:
             if score < 0.5:
                 warnings.append(f'  LOW MATCH ({score:.2f}) {folder}: "{fname}" -> "{title}"')
-            lines.append(f'    {{ img: {json.dumps(fname, ensure_ascii=False)}, alt: {json.dumps(title, ensure_ascii=False)}, url: {json.dumps(url)} }},')
+            w, h = Image.open(os.path.join(ASSETS, folder, fname)).size
+            lines.append(f'    {{ img: {json.dumps(fname, ensure_ascii=False)}, alt: {json.dumps(title, ensure_ascii=False)}, '
+                         f'w: {w}, h: {h}, url: {json.dumps(url)} }},')
         lines.append('  ],')
     lines.append('};')
     print('\n'.join(lines))
