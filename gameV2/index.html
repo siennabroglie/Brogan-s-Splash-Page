@@ -10,7 +10,13 @@
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body { width: 100%; height: 100%; background: #000; overflow: hidden; }
-  #renderCanvas { width: 100%; height: 100%; touch-action: none; outline: none; display: block; }
+  /* z-index 1 puts the rendered scene ABOVE #fly-overlay (z-index 0). The scene clears to a
+     TRANSPARENT black (see scene.clearColor), so open sky is a hole in the canvas and the flyovers
+     behind it show through, while every mesh — barn, trees, terrain — paints over them. That is
+     what makes the flyovers read as distant sky rather than as stickers on the lens. The black they
+     are seen against is html/body's own background, one layer further back again. */
+  #renderCanvas { width: 100%; height: 100%; touch-action: none; outline: none; display: block;
+                  position: relative; z-index: 1; }
 
   /* ── UI chrome — match the Mind Barn site aesthetic: flat GREY boxes with a slight
         drop shadow and a 1pt border one shade LIGHTER than the box; Caveat handwritten
@@ -177,6 +183,56 @@
     100% { transform: scaleX(var(--wind-flip,1)) translate(-1.6vw, -1.6vh) rotate(calc(var(--wind-rot,0deg) - 3deg)); }
   }
   @keyframes windFade    { 0%{opacity:0} 18%{opacity:var(--wind-op,0.8)} 78%{opacity:var(--wind-op,0.8)} 100%{opacity:0} }
+  /* Sky flyovers — the non-wind flying_ PNGs (constellations, egg) drift across the frame on
+     their own schedule, unrelated to gusts. Same two-layer split as the gust overlay: the .fly
+     carrier owns the slow sweep + fade, the inner <img> owns a gentle bob/tilt on its own clock.
+     Sits at z-index 0 — BEHIND the canvas, not just behind #wind-overlay. Everything in the scene
+     occludes them for free that way: walk under the barn and the constellation disappears behind
+     its roof, exactly as a real one would. This is the whole reason the canvas clears transparent.
+     The cost is that nothing in this layer can be clicked through the DOM, since the canvas covers
+     it — see flyLinkAt(), which hit-tests these rectangles from inside pickAction once the scene
+     ray has come back empty. Crucially the img carries NO scaleX: a mirrored constellation reads as
+     a rendering fault, so these are never flipped to face their travel direction the way the
+     wind streaks are. */
+  /* On the ink treatment: these four PNGs are NOT clean cut-outs — like the wind art, roughly half
+     of each file is a fully opaque near-white matte. On the wind streaks that matte hugs the stroke
+     and IS the drawing (a white ribbon with an inked edge), so it reads fine. On the constellations
+     it is a wide lasso blob sitting far off the sparse star strokes, and over the night sky it
+     renders as a grey polygon with a few marks in it. So: invert the art (near-white matte → near
+     black, dark ink → white) and screen-blend the layer, which drops black to nothing against the
+     sky and leaves the ink glowing — a constellation drawn in light, which is what it should be.
+     brightness/contrast then crush the last of the matte without losing Orion's thin joining lines.
+     Trade-off: screen blending means a pass over the bright white ground washes out, hence the
+     sky-leaning FLY_BAND. */
+  #fly-overlay { position: fixed; inset: 0; overflow: hidden; pointer-events: none; z-index: 0;
+                 mix-blend-mode: screen; }
+  #fly-overlay .fly { position: absolute; left: 0; opacity: 0; will-change: transform, opacity; }
+  #fly-overlay .fly img { display: block; width: auto; will-change: transform;
+                          filter: invert(1) brightness(1.35) contrast(1.2); transition: filter 0.18s ease; }
+  /* A flyover carrying a `link` (see FLY_PNGS) gets a transparent hot-spot laid over the middle of
+     its art — a separate element, NOT the <img>. An earlier pass clipped the img itself to shrink
+     the click target, which worked but cut the drawing's edges off: clip-path clips paint and
+     hit-testing together, and there is no way to ask for only the second. So the img keeps
+     pointer-events:none and stays whole, and this empty div carries the pointer instead.
+     Hover is read off the CARRIER, not the img: an ancestor matches :hover whenever a descendant is
+     hit, whatever its own pointer-events, so pointing at the hot-spot still lights the art up.
+     It is a hidden easter egg on purpose — nothing marks it out from its neighbours at rest, and
+     the only tell is the hand cursor plus this brightness lift. Brightness is the one lever that
+     reads here, because the layer is screen-blended: a colour or shadow change would vanish into
+     the sky. (No hover on touch, so this hint is desktop-only. Accepted.) */
+  /* Geometry only — pointer-events would be pointless now, because the canvas sits on top of this
+     whole layer. The div's job is purely to BE the rectangle that flyLinkAt() measures, which is why
+     it still rides the same drift animation as the art. `.hot` is applied from JS when the pointer
+     is resting on one, standing in for the :hover it can no longer receive. */
+  #fly-overlay .fly .fly-hit { position: absolute; pointer-events: none; will-change: transform; }
+  #fly-overlay .fly.linked.hot img { filter: invert(1) brightness(1.75) contrast(1.2); }
+  /* The carrier reuses windSweepLR / windSweepRL above — the sweep distance is the same. */
+  @keyframes flyDrift {
+    0%   { transform: translateY(-0.8vh) rotate(calc(var(--fly-rot,0deg) - 2deg)); }
+    50%  { transform: translateY( 0.8vh) rotate(calc(var(--fly-rot,0deg) + 2deg)); }
+    100% { transform: translateY(-0.8vh) rotate(calc(var(--fly-rot,0deg) - 2deg)); }
+  }
+  @keyframes flyFade     { 0%{opacity:0} 12%{opacity:var(--fly-op,0.5)} 85%{opacity:var(--fly-op,0.5)} 100%{opacity:0} }
   /* photo popup — a 50% black film over the screen with a responsive grid of photos.
      Click the film (anywhere but a photo) to close; click a photo to follow its link. */
   #photo-popup { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 70; display: none; align-items: center; justify-content: center;
@@ -190,6 +246,7 @@
 </head>
 <body>
 <canvas id="renderCanvas" tabindex="1"></canvas>
+<div id="fly-overlay"></div>
 <div id="wind-overlay"></div>
 <div id="photo-popup"><div class="grid"></div></div>
 <div id="loading"><span>building barn&hellip; don't tell mom!</span><div id="loadingBar"></div></div>
@@ -300,6 +357,55 @@ const STREAK_POOL    = 3;        // reusable streak planes (one streak rides eac
 const STREAK_SIZE    = 520;      // streak height in world units (width = × aspect)
 const STREAK_Y_MIN   = 120;      // streak height varies per gust — low…
 const STREAK_Y_MAX   = 720;      // …to high
+// Sky flyovers — the rest of the flying_ art (three constellations + a fried egg) drifts across the
+// frame on its OWN random schedule, independent of the wind. Kept as a separate list from
+// FLOAT_PNGS above because that one also feeds the (currently disabled) 3D streak pool, where a
+// constellation riding a gust front would make no sense. These are screen-space only.
+// `vh` is the on-screen height range for that piece, picked to suit its aspect: bigDipper 872×568,
+// casseopia 690×474, orien 722×1184 (tall portrait), egg 1135×481 (wide).
+// `pos` is where the piece rides in the band, as a fraction of the free vertical room left over
+// once its own height is subtracted (0 = as high as it can go, 1 = as low). Each piece owns a
+// fixed slot so the cycle reads as four distinct residents of the sky rather than four random
+// blobs — but each slot keeps a little jitter, so the same piece is never pinned to the same
+// pixel row twice. The egg is the deliberate exception: it takes the whole band.
+// `link` (optional) makes that piece clickable, and takes the SAME shape as a prop's action in
+// PROP_ACTIONS — { popup: '<videoAssets folder>' } or { url, newTab } — so the sky and the farm
+// speak one vocabulary and linking another piece stays a one-line edit. A piece with no `link` is
+// scenery: it keeps pointer-events:none and clicks fall straight through it to the scene.
+const FLY_PNGS = [
+  { url: 'sceneAssets/animated-assets/flying_bigDipper.png', vh: [16, 26], pos: [0.42, 0.58] },  // centre
+  { url: 'sceneAssets/animated-assets/flying_casseopia.png', vh: [14, 22], pos: [0.00, 0.16] },  // high
+  { url: 'sceneAssets/animated-assets/flying_orien.png',     vh: [26, 40], pos: [0.84, 1.00] },  // low
+  { url: 'sceneAssets/animated-assets/flying_egg.png',       vh: [10, 18], pos: [0.00, 1.00],    // anywhere
+    // Straight out to the one video, not the Just Borg photo grid — the grid was too heavy to load
+    // for what is a glancing click on something drifting past. newTab so the farm is still there
+    // behind them: the egg is a curiosity, not an exit.
+    link: { url: 'https://www.youtube.com/watch?v=ZOJzkTGJ3K0&list=PLf2smdNBnoCoRBV_pOlq9-6lacaXh_qiB&index=18',
+            newTab: true } },
+];
+// Percent inset on each edge of a linked flyover's hot-spot — the transparent div that takes the
+// click, laid over the middle of the art. Not cosmetic caution: the egg's file is 1135×481, so at
+// 10–18vh tall its rectangle is 24–42vh WIDE, and under invert + screen-blend most of that rectangle
+// paints as nothing. Left at full size it is a large invisible click-eater drifting over the screen
+// every fourth pass, stealing clicks meant for the props behind it. Raise it if the egg still
+// swallows prop clicks; lower it if the egg itself feels hard to hit. It has no effect on what is
+// DRAWN — the art is never clipped.
+const FLY_HIT_INSET = 18;
+const FLY_EVERY_MIN = 8;     // seconds of empty sky between flyovers (min)
+const FLY_EVERY_MAX = 22;    // …(max). A pass takes FLY_DUR (12–20s) to cross, so at the short end
+                             // of this range a second piece enters while the first is still on its
+                             // way out — the sky reads as continuously alive rather than as a rare
+                             // event you have to be lucky to catch. Was 25–70, which meant a player
+                             // could walk the whole island and never see one.
+const FLY_DUR_MIN   = 12;    // seconds to cross the frame — statelier than the ~3.5–7s gust streak
+const FLY_DUR_MAX   = 20;
+const FLY_OP_MIN    = 0.50;  // fainter than the wind streaks, so they read as far off. Higher than
+const FLY_OP_MAX    = 0.85;  // …it looks, because the layer is screen-blended (see the CSS note).
+const FLY_BAND      = 70;    // vh: each piece is placed so its WHOLE height fits inside this band —
+                             // so tall Orion is never clipped off the bottom, and passes stay in the
+                             // sky, where the screen-blended ink actually reads. Raise toward 88 to
+                             // let them cross the ground too, accepting that they wash out there.
+const FLY_TILT      = 6;     // degrees: per-pass base tilt, ± this
 // Ground-PNG sway gains
 const LEAN_GAIN      = 0.10;    // 'lean' tip angle per unit wind strength (radians)
 const BEND_GAIN      = 0.16;    // 'bend' top displacement fraction per unit wind strength
@@ -405,6 +511,347 @@ const GROUND_MOUND_FREQ = 8;              // mound count across the field — hi
 const PAD_MARGIN     = 1.15;              // pad radius = object footprint radius × this
 const PAD_FALLOFF    = 180;               // world units to blend each pad into the rolling terrain
 const PAD_MAX_BASE_Y = 80;                // skip objects whose base is above this (loft props, roof, blades)
+// ─── Decorative scatter ───────────────────────────────────────────────────────
+// Scenery, not furniture: grass, plants, bushes and rocks strewn over the bare ground BETWEEN the
+// interactive props, so the walk between them reads as distance covered rather than as empty field.
+// They never block the player, take a click, or cast a shadow (see the `decor` flag in
+// addGroundPng), and they get no pointer arrow — nothing here is ever something to go and press.
+// Heights are given in world units rather than derived from the art's pixel size the way SCENE_PROPS
+// does it. That table can key off pixels because the interactive art is all drawn to one common
+// scale; this art is not, and a bush would come out at twice the player's height if it were.
+// PLAYER_HEIGHT is 68, so read the ranges against that: grass to the shin, plants to the knee,
+// bushes to the chest, rocks low and squat.
+// `style` is the sway model. 'bend' bows the whole sheet downwind, which is what anything on a stem
+// should do — it costs a vertex-buffer rewrite and re-upload every frame, affordable at ~143 pieces
+// and not at the ~450 an earlier, tighter coverage bound demanded. 'lean' only tips the pivot, which
+// is both cheaper and right for anything woody or solid. 'paper' stays reserved for the props: it
+// ripples a 12×16 grid per frame, which does not scale past a handful.
+// Load the page with ?edit=1 to turn on the decoration editor. Off, none of it is registered — no
+// keys, no pointer handler, no HUD — so a visitor's build behaves exactly as if it did not exist.
+const EDIT_MODE = new URLSearchParams(location.search).has('edit');
+const DECOR_DIR   = 'sceneAssets/decorative-assets/';
+const DECOR_KINDS = [
+  { kind:'grass', style:'bend', h:[16, 28], files:[
+    { file:'grass1.png', ar: 460/282 }, { file:'grass2.png', ar: 421/402 }, { file:'grass3.png', ar: 403/209 }] },
+  { kind:'plant', style:'bend', h:[22, 38], files:[
+    { file:'plant1.png', ar: 362/565 }, { file:'plant2.png', ar: 532/302 }, { file:'plant3.png', ar: 344/411 }] },
+  { kind:'bush',  style:'lean', h:[40, 70], files:[
+    { file:'bush1.png',  ar: 837/770 }, { file:'bush2.png',  ar:1342/1260 }, { file:'bush3.png',  ar:1078/493 }] },
+  { kind:'rock',  style:'lean', h:[18, 40], files:[
+    { file:'rock1.png',  ar: 738/570 }, { file:'rock2.png',  ar: 837/407 }, { file:'rock3.png',  ar: 974/372 }] },
+];
+// Placement is BY HAND. Everything here used to be scattered procedurally — random clusters plus a
+// pass that filled any gap wider than a set limit — and that is gone. No constant can say "a bush at
+// the corner of the barn", and art-directing a landscape by editing numbers and reloading is slow.
+// The layout now lives in DECOR_PLACED below, built with the in-game editor (load with ?edit=1).
+//
+// What went with the scatter: the coverage guarantee. Nothing now stops a wide stretch of bare
+// ground — that is a thing to judge by eye. The old scatter is in git if it is ever wanted back.
+const DECOR_TILT = 0.07;           // radians: the ± range the editor rolls a new piece's lean within
+// Hand-placed decorations. `f` keys into DECOR_KINDS' files; `x`/`z` are fractions of R, the same
+// units SCENE_PROPS uses, so both tables read alike and both survive a change to the island's size.
+// `h` (world height) and `t` (tilt) are RECORDED rather than re-rolled at load — otherwise a piece
+// would change size and lean on every refresh, and what you placed is not what you would get back.
+// Append to this with the editor's copy key; do not hand-edit unless you enjoy counting decimals.
+const DECOR_PLACED = [
+  { f:'grass2', x: 0.3099, z: 0.2394, h: 19.5, t:-0.021 },
+  { f:'grass1', x: 0.3435, z: 0.2228, h: 27.2, t:-0.001 },
+  { f:'bush2', x: 0.4299, z: 0.1918, h: 48.7, t: 0.064 },
+  { f:'grass3', x: 0.4416, z:    0.2, h: 18.6, t: 0.025 },
+  { f:'grass3', x: 0.0005, z: 0.0173, h: 21.8, t: 0.026 },
+  { f:'rock2', x: 0.3214, z: 0.2003, h: 18.5, t:-0.068 },
+  { f:'rock2', x:-0.2338, z:  0.188, h: 29.2, t:-0.055 },
+  { f:'rock2', x: 0.1858, z: 0.4734, h: 38.4, t: 0.068 },
+  { f:'rock2', x:-0.4168, z: 0.9942, h: 26.3, t: 0.029 },
+  { f:'rock2', x:-0.8401, z: 0.6039, h: 27.1, t:  0.02 },
+  { f:'rock2', x: 0.9569, z: 0.2718, h: 38.2, t:-0.025 },
+  { f:'rock2', x: 0.5567, z:-0.6293, h: 34.2, t:-0.065 },
+  { f:'rock2', x: 0.3111, z:-0.1963, h: 32.9, t:-0.031 },
+  { f:'rock2', x:-0.3499, z:-0.8929, h: 34.5, t: 0.066 },
+  { f:'rock2', x:-0.6372, z:-0.4803, h: 27.3, t:-0.002 },
+  { f:'rock1', x: 1.0168, z:-0.1102, h: 36.9, t: 0.053 },
+  { f:'rock1', x: 0.2799, z:-0.1695, h: 31.2, t:-0.014 },
+  { f:'rock1', x: 0.8428, z: 0.4717, h: 38.6, t:-0.038 },
+  { f:'rock1', x:-0.9845, z: 0.0931, h: 36.8, t: -0.04 },
+  { f:'rock1', x: -0.254, z: 0.2064, h: 30.2, t: 0.002 },
+  { f:'rock1', x:   0.17, z:-0.5227, h: 23.2, t:-0.035 },
+  { f:'rock1', x: 0.7073, z:-0.6064, h: 22.7, t: 0.051 },
+  { f:'rock1', x: 0.6744, z:-0.4728, h: 35.1, t: 0.034 },
+  { f:'rock1', x:  -0.88, z: 0.6224, h: 35.2, t: 0.041 },
+  { f:'rock1', x:-0.3349, z: 0.9276, h: 31.8, t:  0.04 },
+  { f:'rock3', x: 0.6717, z: 0.2599, h: 37.5, t:-0.041 },
+  { f:'rock3', x:-0.3834, z: 0.9417, h: 23.6, t:-0.016 },
+  { f:'rock3', x:-0.3307, z: 0.7454, h: 36.5, t:-0.031 },
+  { f:'rock3', x: 1.1054, z:-0.2571, h: 22.3, t:-0.008 },
+  { f:'rock3', x:-0.8746, z:  0.024, h: 36.2, t: 0.028 },
+  { f:'rock3', x:-0.8019, z:-0.3173, h: 38.7, t:-0.036 },
+  { f:'rock3', x:-0.2127, z:-0.9667, h: 21.1, t:-0.058 },
+  { f:'rock3', x:-0.0734, z:-0.7851, h: 26.1, t: 0.062 },
+  { f:'grass1', x: 0.6051, z: 0.6248, h: 27.2, t:-0.006 },
+  { f:'grass1', x: 0.7458, z:  0.224, h: 19.5, t: 0.065 },
+  { f:'grass1', x: 0.0748, z:-0.5194, h: 23.7, t: 0.055 },
+  { f:'grass1', x:  0.673, z: -0.601, h:   23, t: 0.016 },
+  { f:'grass1', x: 0.5756, z:-0.3178, h:   24, t:-0.053 },
+  { f:'grass1', x:-0.4012, z:-0.0989, h: 20.3, t: 0.032 },
+  { f:'grass1', x:-0.3948, z: 0.2627, h: 23.4, t: 0.034 },
+  { f:'grass1', x:-0.7429, z: 0.4763, h: 19.1, t:-0.017 },
+  { f:'grass1', x:-0.6136, z: 0.4349, h: 20.3, t: 0.039 },
+  { f:'grass1', x:-0.5151, z: 0.5647, h: 25.9, t:  0.01 },
+  { f:'grass1', x: -0.702, z: 0.6709, h: 18.1, t:-0.039 },
+  { f:'grass1', x:-0.7589, z:  0.098, h:   18, t: 0.067 },
+  { f:'grass1', x:-0.4391, z: 0.0741, h: 20.9, t:-0.047 },
+  { f:'grass1', x:-0.3461, z: 0.8039, h: 26.6, t:-0.003 },
+  { f:'grass1', x:-0.5918, z:-0.6508, h: 21.6, t: 0.067 },
+  { f:'grass1', x:  0.368, z:-0.6483, h: 16.9, t: 0.003 },
+  { f:'grass1', x: 0.3718, z:-0.7984, h: 16.6, t: 0.055 },
+  { f:'grass1', x:  0.799, z:-0.6815, h: 25.1, t: 0.065 },
+  { f:'grass1', x: 0.8474, z:   0.05, h: 21.5, t: 0.067 },
+  { f:'grass1', x: 0.3517, z: 0.2709, h: 19.3, t: 0.022 },
+  { f:'grass1', x: 0.4366, z: 0.5083, h:   27, t:-0.045 },
+  { f:'grass1', x:-0.0537, z: 0.0188, h: 22.2, t: 0.008 },
+  { f:'grass1', x:-0.1361, z:-0.0658, h:   26, t:-0.004 },
+  { f:'grass1', x: 0.0513, z:-0.1931, h: 21.9, t:-0.035 },
+  { f:'grass1', x:-0.1917, z:-0.3333, h: 24.9, t:-0.054 },
+  { f:'grass1', x:-0.5657, z: 0.9734, h: 26.6, t:-0.019 },
+  { f:'grass1', x:-0.3236, z: 0.9688, h: 22.7, t:-0.031 },
+  { f:'grass1', x:-0.0162, z: 0.7947, h: 16.3, t:-0.011 },
+  { f:'grass1', x: 0.3865, z: 0.6894, h: 20.4, t: 0.011 },
+  { f:'grass2', x: 0.5812, z: 0.3965, h: 26.8, t:-0.059 },
+  { f:'grass2', x:-0.6202, z:-0.1069, h: 16.8, t:-0.017 },
+  { f:'grass2', x:-0.6493, z: 0.1659, h: 16.7, t:-0.036 },
+  { f:'grass2', x:-0.2448, z: 0.3493, h: 20.8, t: 0.042 },
+  { f:'grass2', x: 0.0616, z: 0.0979, h:   17, t:-0.026 },
+  { f:'grass2', x: 0.2004, z: 0.0035, h: 16.4, t:-0.014 },
+  { f:'grass2', x:-0.0936, z:-0.2681, h: 16.7, t: 0.031 },
+  { f:'grass2', x: 0.1053, z:-0.4252, h: 21.2, t:-0.042 },
+  { f:'grass2', x: 0.5641, z:-0.5684, h: 20.4, t:-0.024 },
+  { f:'grass2', x: 0.1238, z: -0.956, h: 26.7, t: -0.06 },
+  { f:'grass2', x:-0.4542, z:-0.5305, h: 21.3, t:-0.023 },
+  { f:'grass2', x:-0.5187, z:-0.6849, h: 16.7, t:-0.023 },
+  { f:'grass2', x:-0.9215, z: 0.3674, h: 16.8, t:-0.016 },
+  { f:'grass2', x:-0.6716, z: 0.6777, h:   22, t:-0.045 },
+  { f:'grass2', x:-0.6093, z: 0.4244, h: 18.9, t: 0.035 },
+  { f:'grass2', x:-0.6528, z: 0.4697, h: 24.7, t:-0.057 },
+  { f:'grass2', x:-0.7396, z: 0.2842, h:   25, t:-0.023 },
+  { f:'grass2', x:-0.0941, z: 0.9169, h: 25.6, t:-0.052 },
+  { f:'grass2', x: 0.1702, z: 0.2237, h: 20.6, t: 0.025 },
+  { f:'grass2', x: 0.7681, z:-0.1704, h: 26.2, t:  0.05 },
+  { f:'grass3', x: 0.9779, z: -0.169, h: 23.8, t: 0.037 },
+  { f:'grass3', x: 1.0319, z:-0.4071, h: 26.7, t:-0.066 },
+  { f:'grass3', x: 0.7144, z:-0.6068, h: 17.4, t: 0.034 },
+  { f:'grass3', x: 0.1818, z:-0.2637, h: 16.5, t:-0.006 },
+  { f:'grass3', x:-0.0769, z: -0.573, h: 22.9, t:-0.033 },
+  { f:'grass3', x: -0.264, z:-0.8937, h: 21.4, t: 0.034 },
+  { f:'grass3', x:-0.5888, z:-0.4334, h: 17.1, t: 0.022 },
+  { f:'grass3', x:-0.6847, z:-0.0037, h: 20.9, t: 0.038 },
+  { f:'grass3', x:-0.8586, z:-0.0244, h: 22.6, t:-0.053 },
+  { f:'grass3', x:-0.6335, z: 0.6675, h: 26.4, t: 0.069 },
+  { f:'grass3', x:-0.5567, z: 0.3737, h: 19.6, t: 0.007 },
+  { f:'grass3', x:-0.6126, z: 0.2378, h: 26.2, t:-0.044 },
+  { f:'grass3', x:-0.4278, z: 0.4785, h: 19.9, t: 0.044 },
+  { f:'grass3', x:  0.541, z: 0.6758, h: 16.7, t: 0.001 },
+  { f:'grass3', x: 0.1421, z: 0.6489, h: 22.7, t:-0.021 },
+  { f:'grass3', x: 0.2172, z: 0.2207, h: 27.7, t: 0.069 },
+  { f:'grass3', x: 0.0651, z:-0.0434, h: 18.8, t: -0.04 },
+  { f:'grass3', x:  0.137, z:-0.1462, h: 18.9, t: 0.059 },
+  { f:'grass3', x: -0.012, z:-0.2334, h: 27.4, t:-0.007 },
+  { f:'grass3', x:-0.0827, z:  0.106, h: 23.2, t:  0.07 },
+  { f:'grass3', x: 0.3143, z: 0.1304, h: 25.2, t: 0.029 },
+  { f:'grass3', x: 0.4061, z: 0.0456, h: 25.4, t: 0.043 },
+  { f:'grass3', x: 0.4193, z: 0.1381, h: 16.6, t:-0.067 },
+  { f:'grass3', x: 0.8574, z: 0.0026, h:   25, t: 0.048 },
+  { f:'grass3', x:   0.93, z:-0.2849, h: 23.4, t: 0.023 },
+  { f:'grass3', x: 0.5746, z:-0.5718, h: 24.4, t:-0.033 },
+  { f:'grass3', x: 0.6043, z:-0.7639, h: 18.8, t:-0.049 },
+  { f:'grass3', x: 0.3307, z:-0.4039, h: 24.3, t:-0.008 },
+  { f:'grass3', x:-0.2445, z:-0.8258, h: 26.5, t: 0.007 },
+  { f:'grass3', x:-0.4593, z:-0.7663, h: 22.6, t: 0.031 },
+  { f:'grass3', x:-0.5473, z:-0.3314, h: 23.5, t: -0.07 },
+  { f:'grass3', x:-0.8637, z: 0.3041, h: 26.4, t:-0.021 },
+  { f:'plant1', x:-0.0595, z: 0.0071, h: 37.1, t: 0.027 },
+  { f:'plant1', x:-0.0538, z:-0.0013, h:   23, t:  0.04 },
+  { f:'plant1', x:-0.0431, z:-0.0035, h: 22.5, t:-0.014 },
+  { f:'plant1', x:-0.0462, z:-0.0169, h: 37.4, t: 0.018 },
+  { f:'plant1', x:-0.3335, z:-0.1806, h:   30, t: 0.033 },
+  { f:'plant1', x: -0.323, z: -0.171, h: 27.9, t:-0.011 },
+  { f:'plant1', x:-0.4229, z:-0.5935, h:   37, t: 0.008 },
+  { f:'plant1', x:-0.3868, z:  -0.59, h: 24.6, t: 0.049 },
+  { f:'plant1', x:-0.4101, z:-0.5796, h: 35.2, t:-0.013 },
+  { f:'plant1', x: 0.8135, z: 0.4673, h: 24.2, t:-0.069 },
+  { f:'plant1', x: 0.8176, z: 0.4207, h: 23.2, t: 0.011 },
+  { f:'plant1', x: 0.7967, z: 0.4823, h:   28, t:-0.035 },
+  { f:'plant1', x:  0.777, z: 0.5728, h: 27.4, t: 0.041 },
+  { f:'plant1', x: 0.7185, z: 0.5778, h: 25.4, t: 0.053 },
+  { f:'plant2', x:  0.754, z:  0.575, h: 29.3, t:-0.007 },
+  { f:'plant2', x: 0.1182, z: 0.0309, h: 28.4, t: 0.069 },
+  { f:'plant2', x:-0.3469, z:-0.2722, h: 34.7, t:-0.023 },
+  { f:'plant2', x:-0.5672, z:-0.3251, h: 23.6, t:-0.034 },
+  { f:'plant2', x:-0.4337, z:-0.5583, h: 26.4, t: -0.06 },
+  { f:'plant2', x:  0.284, z:-0.6341, h:   24, t: 0.049 },
+  { f:'plant2', x: 0.2895, z:-0.7539, h:   34, t: 0.009 },
+  { f:'plant2', x:-0.4545, z:-0.8701, h: 35.4, t:-0.047 },
+  { f:'plant2', x: 0.8067, z:-0.6505, h: 36.3, t:-0.058 },
+  { f:'plant2', x: 0.9048, z:-0.4519, h: 23.3, t: 0.036 },
+  { f:'plant2', x: 0.7597, z:-0.2081, h: 35.2, t:-0.051 },
+  { f:'plant2', x:  0.994, z:-0.0939, h: 25.1, t:-0.003 },
+  { f:'plant2', x: 0.8957, z:-0.1632, h: 22.4, t:-0.023 },
+  { f:'plant2', x: 0.7665, z: 0.4595, h: 36.8, t: 0.001 },
+  { f:'plant2', x:-0.3031, z: 0.7004, h: 30.6, t:-0.059 },
+  { f:'plant2', x:-0.6203, z: 0.3773, h: 37.8, t: 0.048 },
+  { f:'plant2', x:-0.1489, z: -0.081, h: 35.5, t: 0.036 },
+  { f:'plant2', x:-0.8344, z:  -0.31, h: 30.8, t:-0.047 },
+  { f:'plant3', x:-0.3861, z: 0.7724, h: 24.9, t: 0.001 },
+  { f:'plant3', x:-0.3865, z: 0.7844, h: 25.1, t:-0.057 },
+  { f:'plant3', x:-0.3706, z: 0.7822, h: 25.2, t:-0.002 },
+  { f:'plant3', x: 0.1743, z: 0.7997, h: 22.8, t:-0.056 },
+  { f:'plant3', x: 0.1931, z: 0.7856, h:   31, t:-0.038 },
+  { f:'plant3', x: 0.1854, z: 0.8307, h: 26.4, t: 0.056 },
+  { f:'plant3', x: 0.9784, z: 0.3147, h: 25.9, t:-0.008 },
+  { f:'plant3', x: 0.7877, z:-0.1716, h: 30.6, t: 0.023 },
+  { f:'plant3', x: 0.9632, z:-0.2739, h: 34.9, t:-0.049 },
+  { f:'plant3', x: 0.9889, z:-0.2931, h: 36.1, t: 0.019 },
+  { f:'plant3', x: 1.0191, z:-0.2697, h:   32, t:-0.016 },
+  { f:'plant3', x: 0.6179, z:-0.7773, h:   30, t: 0.004 },
+  { f:'plant3', x: 0.6269, z:-0.7424, h: 26.8, t: 0.036 },
+  { f:'plant3', x: 0.6393, z:-0.7716, h: 27.2, t: 0.011 },
+  { f:'plant3', x:-0.2412, z:-0.9219, h: 31.9, t:-0.017 },
+  { f:'plant3', x:-0.2223, z:-0.9184, h: 35.6, t:-0.034 },
+  { f:'plant3', x:-0.1755, z:-0.9933, h: 24.6, t:-0.018 },
+  { f:'plant3', x: -0.143, z:-0.9809, h: 25.9, t:  0.05 },
+  { f:'plant3', x:-0.1558, z:-0.9297, h: 25.6, t: -0.01 },
+  { f:'plant3', x:-0.1188, z:-1.0012, h: 25.2, t: 0.035 },
+  { f:'plant3', x:-0.0883, z:-0.9213, h: 22.9, t: 0.054 },
+  { f:'plant2', x:-0.0849, z:-0.9595, h: 34.7, t:-0.008 },
+  { f:'plant1', x:-0.0671, z:-1.0303, h: 32.5, t: 0.067 },
+  { f:'plant1', x: -0.042, z:-0.9714, h: 26.6, t: 0.012 },
+  { f:'plant1', x:-0.1362, z:-0.9467, h: 37.7, t:-0.034 },
+  { f:'plant1', x: -0.076, z:-0.8407, h: 30.2, t:-0.029 },
+  { f:'plant1', x:-0.0875, z:-1.0439, h: 35.2, t: 0.068 },
+  { f:'grass1', x:-0.0344, z:-0.9079, h: 26.2, t: 0.064 },
+  { f:'grass1', x:-0.0348, z:-1.0119, h: 24.7, t: 0.013 },
+  { f:'grass2', x:-0.1415, z: -0.777, h: 22.7, t:-0.013 },
+  { f:'grass2', x:-0.0279, z:-0.9593, h: 16.3, t: -0.03 },
+  { f:'grass2', x:-0.0738, z:-0.9785, h: 25.3, t:-0.057 },
+  { f:'grass2', x:-0.1035, z:-1.0028, h: 25.4, t: 0.037 },
+  { f:'grass3', x:-0.1138, z:-1.0362, h: 26.3, t: 0.031 },
+  { f:'grass3', x:-0.1446, z:-0.8662, h: 25.2, t: 0.009 },
+  { f:'grass3', x:-0.1254, z:-0.5932, h: 17.5, t: 0.004 },
+  { f:'grass3', x:-0.1234, z:-0.2531, h: 23.3, t:-0.039 },
+  { f:'grass3', x:-0.1532, z:-0.3692, h: 27.3, t: 0.021 },
+  { f:'plant1', x: -0.139, z: -0.293, h:   27, t:-0.014 },
+  { f:'plant1', x:-0.1179, z:-0.3863, h: 32.4, t: 0.046 },
+  { f:'plant1', x:-0.1966, z:-0.4686, h: 36.4, t:-0.008 },
+  { f:'plant1', x: -0.201, z:-0.2855, h: 25.4, t:-0.007 },
+  { f:'plant2', x:-0.2064, z:-0.4025, h: 30.9, t:-0.041 },
+  { f:'plant2', x:-0.2317, z:-0.4553, h: 27.7, t:-0.068 },
+  { f:'plant2', x:-0.1933, z:-0.2216, h:   25, t: 0.009 },
+  { f:'plant3', x:-0.2278, z:-0.3437, h: 31.9, t:-0.063 },
+  { f:'plant3', x:-0.1717, z:-0.3474, h: 29.7, t:-0.018 },
+  { f:'plant3', x: -0.168, z: -0.408, h:   29, t: 0.015 },
+  { f:'plant3', x:-0.1077, z:  -0.31, h: 37.9, t: 0.025 },
+  { f:'grass1', x:-0.2336, z:-0.3713, h: 26.7, t: 0.033 },
+  { f:'grass1', x:-0.3144, z:-0.4544, h: 24.7, t:-0.001 },
+  { f:'grass1', x:-0.2441, z: -0.514, h: 19.2, t:-0.065 },
+  { f:'grass2', x:-0.1995, z:-0.5338, h: 19.9, t:-0.065 },
+  { f:'grass2', x:-0.2449, z:-0.2605, h:   24, t: 0.044 },
+  { f:'grass2', x:-0.1037, z:-0.1336, h: 22.5, t:-0.039 },
+  { f:'grass2', x:-0.1323, z:-0.5118, h: 22.1, t: 0.028 },
+  { f:'grass2', x:-0.1573, z:  0.319, h: 21.5, t:-0.012 },
+  { f:'grass2', x:-0.1616, z: 0.4048, h: 18.3, t:-0.018 },
+  { f:'grass2', x:-0.2047, z: 0.2705, h: 17.8, t: 0.039 },
+  { f:'grass2', x: -0.143, z: 0.3588, h: 18.9, t: 0.038 },
+  { f:'grass2', x:-0.1875, z: 0.3295, h: 20.1, t: 0.044 },
+  { f:'grass1', x:-0.1547, z: 0.2462, h: 22.3, t:-0.005 },
+  { f:'grass1', x:-0.1547, z: 0.1457, h: 26.3, t: 0.011 },
+  { f:'grass1', x:-0.0653, z: 0.3379, h: 22.2, t: 0.037 },
+  { f:'grass1', x: -0.094, z: 0.5232, h: 23.6, t:-0.002 },
+  { f:'grass1', x:-0.2037, z: 0.3727, h: 19.4, t:-0.028 },
+  { f:'grass1', x:-0.1665, z:  0.338, h: 22.4, t:  0.05 },
+  { f:'grass3', x:-0.1774, z: 0.2876, h: 17.1, t:-0.002 },
+  { f:'grass3', x: -0.227, z: 0.3012, h: 17.8, t: 0.048 },
+  { f:'grass3', x: -0.185, z: 0.4304, h: 19.1, t: 0.013 },
+  { f:'grass3', x:-0.3329, z: 0.1884, h: 17.5, t:-0.046 },
+  { f:'grass3', x:-0.1075, z: 0.4085, h: 17.6, t: 0.024 },
+  { f:'plant1', x:-0.1417, z: 0.3913, h:   27, t:-0.065 },
+  { f:'plant1', x:-0.2093, z: 0.3085, h:   23, t: 0.051 },
+  { f:'plant1', x:-0.1857, z: 0.2962, h: 33.1, t: 0.045 },
+  { f:'plant1', x:-0.1702, z: 0.3025, h: 29.2, t:  0.03 },
+  { f:'plant1', x:-0.1831, z: 0.2289, h: 33.5, t:-0.011 },
+  { f:'plant2', x:-0.1475, z: 0.2798, h: 27.1, t: 0.014 },
+  { f:'plant2', x:-0.1916, z: 0.4746, h: 35.8, t: 0.068 },
+  { f:'plant3', x:-0.1884, z:  0.379, h: 32.8, t: 0.035 },
+  { f:'plant3', x: -0.167, z:  0.351, h: 33.8, t: 0.042 },
+  { f:'plant3', x: -0.202, z: 0.2855, h:   37, t:  0.01 },
+  { f:'plant3', x: -0.177, z: 0.2436, h: 22.3, t: 0.063 },
+  { f:'plant3', x:-0.1818, z: 0.1586, h: 22.1, t:-0.029 },
+  { f:'rock1', x:-0.2124, z: 0.3978, h: 30.6, t:-0.025 },
+  { f:'bush1', x:  0.422, z: 0.2302, h:   68, t:-0.044 },
+  { f:'bush1', x: -0.132, z:-0.0264, h: 46.1, t:-0.017 },
+  { f:'bush1', x:-0.1095, z: 0.0155, h: 65.1, t: 0.038 },
+  { f:'bush2', x:-0.1312, z:-0.0069, h: 69.5, t:  0.02 },
+  { f:'bush3', x:-0.1039, z:-0.0057, h: 42.8, t: 0.035 },
+  { f:'bush3', x: 0.1524, z:-0.0645, h: 69.7, t:-0.033 },
+  { f:'bush3', x: 0.3944, z: 0.1667, h: 50.6, t: 0.023 },
+  { f:'bush3', x:-0.2721, z: 0.2594, h: 42.9, t:-0.029 },
+  { f:'bush2', x:-0.2566, z: 0.3034, h: 68.4, t: 0.014 },
+  { f:'bush2', x:-0.2916, z: 0.2734, h: 66.7, t:-0.007 },
+  { f:'bush2', x: -0.406, z:-0.2254, h: 68.7, t: 0.029 },
+  { f:'bush3', x: -0.459, z:-0.2228, h: 42.6, t: 0.069 },
+  { f:'bush3', x:-0.4353, z:-0.2089, h: 67.3, t:-0.054 },
+  { f:'bush3', x:-0.6164, z:-0.4993, h: 48.1, t:-0.012 },
+  { f:'bush1', x:-0.4643, z:-0.6607, h:   62, t: 0.048 },
+  { f:'bush1', x:-1.0925, z: 0.0135, h: 49.6, t: 0.046 },
+  { f:'bush1', x:-0.4721, z:-0.8911, h: 46.3, t:-0.057 },
+  { f:'bush1', x:-0.1822, z:-0.9126, h: 66.3, t: 0.023 },
+  { f:'bush1', x:-0.1451, z:-1.0322, h: 66.8, t: 0.011 },
+  { f:'bush2', x:-0.1003, z:-1.0631, h: 52.9, t:-0.036 },
+  { f:'bush2', x:-0.1584, z:-1.0503, h: 69.8, t: 0.065 },
+  { f:'bush1', x:-0.0214, z:-0.9208, h: 62.7, t:-0.055 },
+  { f:'bush3', x:-0.0405, z:-0.9838, h: 57.3, t:  0.03 },
+  { f:'bush3', x: 0.3245, z:-0.7674, h: 64.5, t: -0.05 },
+  { f:'bush2', x: 0.2892, z:-0.8523, h: 49.8, t: 0.019 },
+  { f:'rock2', x: 0.1734, z:-0.8008, h: 21.2, t:-0.035 },
+  { f:'rock3', x: 0.3407, z:-0.4195, h:   35, t:-0.054 },
+  { f:'grass3', x: 0.3703, z:-0.4557, h: 16.3, t:  0.02 },
+  { f:'bush2', x: 0.7133, z: -0.724, h: 42.8, t: 0.014 },
+  { f:'bush2', x: 0.6979, z:-0.6348, h: 60.4, t: 0.035 },
+  { f:'bush2', x: 0.7604, z:-0.7148, h: 52.4, t:-0.066 },
+  { f:'bush1', x: 0.7188, z:-0.6665, h: 67.4, t: 0.048 },
+  { f:'bush1', x: 0.6552, z:-0.6651, h: 43.1, t: 0.062 },
+  { f:'bush1', x:  0.717, z:-0.7676, h: 40.3, t: -0.04 },
+  { f:'bush3', x: 0.7359, z: -0.724, h: 49.1, t: 0.018 },
+  { f:'bush3', x: 0.6698, z:-0.6429, h: 53.8, t: 0.005 },
+  { f:'bush3', x: 0.8203, z:-0.7474, h: 64.2, t:-0.058 },
+  { f:'bush3', x: 0.7878, z:-0.6117, h: 57.5, t:  0.03 },
+  { f:'bush3', x: 0.9755, z:-0.5277, h: 43.2, t: 0.022 },
+  { f:'bush3', x: 1.0212, z: -0.491, h: 59.2, t: 0.042 },
+  { f:'bush3', x: 1.0956, z: -0.389, h: 49.6, t:  0.07 },
+  { f:'grass1', x: 0.9675, z:-0.4841, h: 25.9, t:-0.005 },
+  { f:'grass1', x: 0.8645, z:-0.5283, h: 27.9, t: 0.041 },
+  { f:'grass1', x: 0.9517, z:-0.4472, h: 25.4, t: 0.048 },
+  { f:'grass2', x: 0.8655, z:-0.5011, h: 24.8, t: 0.022 },
+  { f:'grass2', x: 0.9053, z:  -0.51, h: 26.1, t:-0.049 },
+  { f:'grass2', x: 0.8509, z:-0.4487, h: 17.3, t:  0.04 },
+  { f:'grass2', x: 0.9647, z: -0.422, h: 23.9, t:     0 },
+  { f:'grass2', x: 0.8494, z:-0.4813, h: 23.6, t:-0.031 },
+  { f:'grass3', x: 0.7969, z:-0.4527, h: 18.2, t:-0.064 },
+  { f:'grass3', x: 0.9512, z:-0.4777, h: 21.6, t:-0.042 },
+  { f:'grass3', x: 1.0281, z:-0.3827, h: 17.9, t: 0.011 },
+  { f:'grass3', x: 1.0266, z:-0.4941, h:   21, t:-0.068 },
+  { f:'plant1', x: 0.9727, z:-0.4741, h: 32.4, t:-0.062 },
+  { f:'plant1', x: 0.9713, z:-0.4606, h: 35.4, t: 0.024 },
+  { f:'plant1', x: 0.8897, z:  -0.51, h: 35.5, t:-0.009 },
+  { f:'plant1', x: 0.9811, z:-0.4372, h: 37.2, t: 0.047 },
+  { f:'plant1', x: 0.8858, z:-0.4446, h:   32, t:-0.017 },
+  { f:'plant1', x: 1.0152, z:-0.3746, h: 26.2, t: -0.03 },
+  { f:'plant1', x: 1.0792, z:-0.3566, h: 27.7, t: 0.047 },
+  { f:'plant1', x: 1.0792, z:-0.3566, h: 30.2, t: 0.024 },
+  { f:'plant1', x: 1.0607, z:-0.3813, h: 32.7, t: 0.011 },
+  { f:'rock2', x: 0.8955, z:-0.0951, h:   19, t:-0.057 },
+  { f:'rock2', x: 0.8032, z: -0.182, h: 39.7, t: 0.048 },
+  { f:'rock3', x: 0.9269, z:-0.1863, h: 34.2, t:-0.022 },
+  { f:'rock3', x: 1.0747, z:-0.0472, h: 34.2, t:-0.007 },
+];
 // Player light orb — a subtle white point light that follows the player in third-person only.
 const PLAYER_LIGHT_INTENSITY = 0.4;       // subtle brightening — the main dial
 const PLAYER_LIGHT_RANGE     = 220;       // orb radius in world units (~3x PLAYER_HEIGHT)
@@ -423,14 +870,48 @@ const CAM_FRAME_LERP = 0.05;              // how fast framing eases on entering/
 const canvas = document.getElementById('renderCanvas');
 const engine = new BABYLON.Engine(canvas, true, { stencil: true });
 // Supersampling — render above display resolution then downscale, smoothing edge-render line
-// aliasing (esp. thin distant lines). 0.4 ≈ 2.5x; lower = sharper but heavier on the GPU.
-engine.setHardwareScalingLevel(0.4);
+// aliasing (esp. thin distant lines). Babylon renders at CSS size / this, so it IS the pixel budget:
+// 0.75 is 1.33x native per axis (1.78x the pixels), and every step toward 0 is quadratically dearer.
+//
+// 0.4 is 2.5x per axis — 6.25x the pixels — and it is what the art needs: below it the thin ink
+// outlines visibly pixelate, which is the whole reason the supersampling is here.
+//
+// It was briefly dropped to 0.75 while chasing a frame-rate problem, on the evidence that GPU time
+// was 20-30 ms against the 16.7 ms a 60fps frame allows. That reading was real but it was not the
+// bottleneck: the scene was ALSO spending ~44 ms of CPU, and once the decorations were rebuilt as
+// thin instances (see buildDecor) that halved. Lowering this cost the look and bought little.
+//
+// If the GPU side does need to come down later, the honest lever is paperWarp itself — nine texture
+// taps plus fbm noise per pixel — not the pixel count. Baking that noise into a small tiling texture
+// and cutting the edge mask to four taps would make the pass ~3x cheaper at full resolution.
+// Never take this ABOVE 1.0: an adaptive controller once pushed it to 2.0, below native, and the
+// result was indefensible.
+const RENDER_SCALE = 0.4;
+engine.setHardwareScalingLevel(RENDER_SCALE);
+
+// ─── Diagnostic flags ─────────────────────────────────────────────────────────
+// All inert unless asked for in the URL, and all exist for one reason: to answer "what is slow?"
+// with a measurement instead of a guess. Several optimisation passes were spent on subsystems that
+// turned out not to be the cost, because there was no way to switch one off and look.
+//   ?perf=1     live fps / GPU ms / CPU ms / draw calls
+//   ?nostars    skip the 12,150-sprite star dome
+//   ?nowarp     skip the paperWarp + FXAA post-process chain
+//   ?nodecor    skip building the hand-placed decorations
+// Load with one at a time and watch which number moves.
+const _flags    = new URLSearchParams(location.search);
+const PERF_MODE = _flags.has('perf');
+const NO_STARS  = _flags.has('nostars');
+const NO_WARP   = _flags.has('nowarp');
+const NO_DECOR  = _flags.has('nodecor');
 
 (async () => {  // async IIFE — required so we can await HavokPhysics()
 
 const scene = new BABYLON.Scene(engine);
 // Night sky — black backdrop behind the procedural star dome (see "Star dome" section below).
-scene.clearColor   = new BABYLON.Color4(0, 0, 0, 1);
+// Alpha 0, not 1: open sky is a HOLE in the canvas, so #fly-overlay (which sits behind it) shows
+// through there and is covered anywhere a mesh draws. html/body is #000, so the sky still reads as
+// the same black it always did — the flyovers' screen blend is against that, unchanged.
+scene.clearColor   = new BABYLON.Color4(0, 0, 0, 0);
 // Uniform ambient floor — lifts shadowed faces toward white, but kept low enough that the
 // directional sun can still shade slopes (so terrain mounds & object form read clearly).
 scene.ambientColor = new BABYLON.Color3(0.42, 0.42, 0.42);
@@ -601,6 +1082,7 @@ viewCamera.maxZ = 12000;   // lines stop z-fighting their surfaces and breaking 
 // the stars sit "at infinity" — camera rotation reveals different sky, walking causes no
 // parallax (classic skybox behaviour), and it tracks whichever camera is active (iso ↔ 3P).
 try {
+  if (NO_STARS) throw new Error('stars disabled by ?nostars');   // caught below, scene renders on
   // ── Observer location — Kalispell, MT (same as the splash page) ──
   const LAT_DEG =  48.3795;
   const LON_DEG = -114.2468;
@@ -870,17 +1352,29 @@ try {
   buildStars();
 
   // ── Per-frame: re-centre the dome on the active camera (infinite distance) + twinkle ──
-  // With ~27k sprites, repositioning every one each frame is the heavy cost — so only do it when
-  // the camera has actually MOVED (idle/orbit-stopped frames skip it). Twinkle touches only the
-  // few hundred prominent stars (tw>0), not the tiny background field.
+  // Repositioning ~12k sprites is by far the heaviest thing in the frame, so it happens as rarely as
+  // it can. It used to be gated on the camera having moved more than 0.5 units, which skipped IDLE
+  // frames and nothing else — and idle frames were never the problem. Walking moves the camera every
+  // frame, so the whole loop ran every frame, and measurement put it at ~15 ms: the single largest
+  // cost in the game and the entire reason movement felt worse than standing still. It hid from every
+  // profiler counter because it runs in an onBeforeRender observer, which neither Babylon's subsystem
+  // meters nor the render-loop timers cover.
+  //
+  // 25 units against a 6000 dome radius is a 0.24° parallax shift when it does fire — under what the
+  // eye resolves against a starfield. That is the whole trade: around 100 the re-centre becomes a
+  // visible twitch in the stars, and below about 5 it is back to doing the work every frame for
+  // nothing. Twinkle is unrelated and stays per-frame: it touches only the few hundred prominent
+  // stars (tw>0), not the background field.
+  const DOME_RECENTRE = 25;
   const twinklers = skyObjects.filter(o => o.tw > 0);
   let starT = 0, lastX = Infinity, lastY = 0, lastZ = 0;
   scene.onBeforeRenderObservable.add(() => {
+    const _ts = performance.now();
     starT += 0.02;
     const cam = scene.activeCamera;
-    if (!cam) return;
+    if (!cam) { _jt.stars = performance.now() - _ts; return; }
     const eye = cam.globalPosition;
-    if (Math.abs(eye.x - lastX) + Math.abs(eye.y - lastY) + Math.abs(eye.z - lastZ) > 0.5) {
+    if (Math.abs(eye.x - lastX) + Math.abs(eye.y - lastY) + Math.abs(eye.z - lastZ) > DOME_RECENTRE) {
       for (let i = 0; i < skyObjects.length; i++) {
         const o = skyObjects[i];
         o.sprite.position.set(eye.x + o.dir.x * DOME_R, eye.y + o.dir.y * DOME_R, eye.z + o.dir.z * DOME_R);
@@ -891,6 +1385,7 @@ try {
       const o = twinklers[i];
       o.sprite.width = o.sprite.height = o.baseSize * (1 + o.tw * Math.sin(starT * 1.5 + o.phase));
     }
+    _jt.stars = performance.now() - _ts;
   });
 } catch (starErr) {
   // Don't let a star-dome failure black out the whole scene; surface the error instead.
@@ -909,7 +1404,7 @@ try {
 // so unlike the earlier sketch outline it works in BOTH ISO and third-person. It warps the
 // whole image slightly — keep WARP.amp small. (NB: 'warpScale', not 'scale' — Babylon's
 // built-in post-process vertex shader already declares a vec2 'scale'.)
-const USE_WARP = true;
+const USE_WARP = !NO_WARP;   // ?nowarp drops the warp AND the FXAA that follows it
 // amp = wobble in render px; scale = wave frequency. edgeLo/edgeHi gate the warp to high-
 // contrast areas: a pixel only wobbles if there's an outline within ~amp px of it, so the
 // black lines go wavy while flat shaded surfaces are left completely untouched (no noise
@@ -954,9 +1449,29 @@ void main(void){
   }
   float edge = smoothstep(edgeLo, edgeHi, contrast);   // 0 on flat surfaces, 1 on outlines
   vec2 d = vec2(fbm(vUV * warpScale), fbm(vUV * warpScale + 17.3)) - 0.5;
-  vec3 col = texture2D(textureSampler, vUV + d * 2.0 * amp * px * edge).rgb;
+  vec4 src = texture2D(textureSampler, vUV + d * 2.0 * amp * px * edge);
+  vec3 col = src.rgb;
+  // Alpha is load-bearing now: the scene clears transparent so the sky flyovers BEHIND the canvas
+  // show through (see scene.clearColor), and this pass is the last one, so whatever it writes is
+  // what the browser composites on. Forcing 1.0 would seal the sky shut and hide them.
+  //
+  // But passing src.a alone is not enough either. The stars, nebulae and planets are additive
+  // sprites (blendMode = ALPHA_ADD, blendFunc SRC_ALPHA/ONE applied to all four channels), so
+  // against a destination alpha of 0 they deposit plenty of COLOUR and almost no ALPHA — about
+  // srcA² at a glow's core and nothing across its halo. On an opaque sky that never mattered;
+  // here it erased every star on screen.
+  //
+  // So alpha means "is there anything here", which in this scene is two separate things: solid
+  // geometry, and emitted light. Take whichever is greater. Geometry keeps its 1, empty sky stays
+  // a true hole, and a star gets an alpha equal to its own brightness — which over black composites
+  // to exactly the intensity it was drawn at.
+  //
+  // Read off src, BEFORE the dither below, so empty sky lands on exactly 0 rather than ~0.002.
+  // Max channel rather than luma: the canvas is premultiplied-alpha, so rgb must not exceed alpha
+  // or the compositor clamps it — luma would clip the red of a warm star and shift its hue.
+  float lit = max(src.r, max(src.g, src.b));
   col += (hash(gl_FragCoord.xy) - 0.5) * dither / 255.0;   // mild dither for any residual banding
-  gl_FragColor = vec4(col, 1.0);
+  gl_FragColor = vec4(col, max(src.a, lit));
 }
 `;
 
@@ -975,12 +1490,17 @@ function makePaperWarp(cam){
 }
 // Attach to both presenting cameras (ISO + third-person view). Pure color pass, so the
 // dual-camera third-person rig that broke the gbuffer outline is not a problem here.
-// FXAA runs AFTER the warp so it smooths the (now-wavy) edge lines — this is what stops the
-// thin distant outlines from pixelating; 2x supersampling alone can't fully resolve them.
+// FXAA runs BEFORE the warp. It used to run after, so it could smooth the now-wavy edge lines —
+// better for those outlines, but Babylon's built-in FXAA writes opaque alpha, and with the sky now
+// clearing transparent (see scene.clearColor) it sealed the hole shut: solid black, no flyovers.
+// Being last is what makes paperWarp the pass that decides the final alpha, and it carries the
+// sampled alpha through. The cost is that FXAA no longer sees the warped edges, so thin distant
+// outlines anti-alias in their straight form and the warp reintroduces a little of the stepping it
+// was there to remove. Watch the far tree lines if that ever needs revisiting.
 if (USE_WARP) {
   [isoCamera, viewCamera].forEach((cam) => {
-    makePaperWarp(cam);
     new BABYLON.FxaaPostProcess('fxaa', 1.0, cam);
+    makePaperWarp(cam);
   });
 }
 
@@ -1357,12 +1877,19 @@ const propLinks = [];   // { prop, action } — click a linked prop in third per
 // mousemove, because what is clickable also changes without the mouse moving at all — stepping
 // between overview and third person flips every prop live or inert under a held-still cursor.
 let pickAction = null;
+let updateDecorSway = null;   // assigned once the decorations are built (see buildDecor)
 let hoverOn = false;
+let flyHovered = null;   // the .fly-hit under the pointer, refreshed by pickAction each time it runs
+let flyHotEl   = null;   // the carrier currently wearing .hot, so the DOM is touched only on a change
 function updateHoverCursor() {
-  if (IS_MOBILE || !pickAction) return;     // no hover on touch, and nothing to test before load
+  if (IS_MOBILE || !pickAction || EDIT_MODE) return;   // no hover on touch, nothing to test before
+                                            // load, and no prop affordances while editing
   // && short-circuits, so outside third person the per-frame raycast is skipped entirely — and
   // hoverOn still falls to false, which clears a hand left showing when the mode changed.
   const on = mode === 'tp' && !!pickAction(scene.pick(scene.pointerX, scene.pointerY));
+  // pickAction leaves the flyover it matched (if any) in flyHovered, so the art can light up off the
+  // same test that raised the hand — no second hit-test, and the two can never disagree.
+  setFlyHot(mode === 'tp' ? flyHovered : null);
   if (on === hoverOn) return;               // only touch the DOM when it actually changes
   hoverOn = on;
   // Babylon's InputManager resets the canvas cursor to scene.defaultCursor on EVERY pointermove,
@@ -1447,6 +1974,94 @@ function flashWindOverlay(peak) {
     carrier.appendChild(img);
     WIND_OVERLAY_EL.appendChild(carrier);
   }
+}
+
+// ── Sky flyovers ────────────────────────────────────────────────────────────────
+// The constellations and the egg drift across the frame on their own random timer — see the
+// scheduler in the render loop. Same construction as flashWindOverlay above, but a slower, quieter
+// pass: always left→right, each piece at its own height in the FLY_BAND, never mirrored, and a long lazy bob
+// instead of the gust streak's snappy wobble.
+const FLY_OVERLAY_EL = document.getElementById('fly-overlay');
+let   flyIdx         = 0;                           // next piece in the fixed cycle (see below)
+let   nextFlyT       = _rand(3, 8);                 // wind-clock time of the first flyover
+
+function flyPropAcross() {
+  if (!FLY_OVERLAY_EL || !FLY_PNGS.length) return;
+  // The four pieces come round in FLY_PNGS order — bigDipper, casseopia, orien, egg — and repeat.
+  // Deliberately a cycle and not a shuffle: with each one pinned to its own height (see `pos`),
+  // a fixed rotation makes the sky feel like a turning set of constellations you can learn, while
+  // random picks would read as clutter and could show the same piece twice running. Everything
+  // ELSE about a pass still rolls fresh: when it comes, how big, how fast, which way, its tilt.
+  const def = FLY_PNGS[flyIdx];
+  flyIdx = (flyIdx + 1) % FLY_PNGS.length;
+  const h   = _rand(def.vh[0], def.vh[1]);          // this pass's on-screen height, in vh
+  const dur = _rand(FLY_DUR_MIN, FLY_DUR_MAX).toFixed(2);
+  // Always left→right. The wind streaks always run right→left, so holding these to the opposite
+  // heading keeps the two layers legible as separate weather: the near, fast one blows one way,
+  // the far, slow one drifts the other. A per-pass coin flip made them read as the same stuff.
+
+  // Carrier: the slow horizontal sweep + fade.
+  const carrier = document.createElement('div');
+  carrier.className = def.link ? 'fly linked' : 'fly';
+  // Ride this piece's slot within the free room left after its own height — so the whole of it
+  // stays inside FLY_BAND at any size, and tall Orion sitting "low" still never clips off.
+  const room = Math.max(0, FLY_BAND - h);
+  const slot = def.pos || [0, 1];
+  carrier.style.top = (room * _rand(slot[0], slot[1])).toFixed(1) + 'vh';
+  carrier.style.setProperty('--fly-op', _rand(FLY_OP_MIN, FLY_OP_MAX).toFixed(2));
+  carrier.style.animation = `windSweepLR ${dur}s linear both, flyFade ${dur}s ease-in-out both`;
+  carrier.addEventListener('animationend', (e) => { if (e.animationName === 'flyFade') carrier.remove(); });
+
+  // Inner image: a long, slow bob + tilt — a few seconds per cycle, not the streaks' ~1s flutter.
+  const img = document.createElement('img');
+  img.src = def.url;
+  img.style.height = h.toFixed(1) + 'vh';
+  const rot   = ((Math.random() * 2 - 1) * FLY_TILT).toFixed(1) + 'deg';
+  const drift = `flyDrift ${_rand(4, 8).toFixed(2)}s ease-in-out infinite`;
+  img.style.setProperty('--fly-rot', rot);
+  img.style.animation = drift;
+  carrier.appendChild(img);
+
+  if (def.link) {
+    // The click target: an empty div inset over the middle of the art. It runs the SAME drift
+    // animation, off the same duration and tilt, so it bobs in lockstep with the drawing instead of
+    // sitting still while the egg wanders out from under it. Inset percentages resolve against the
+    // carrier, which shrink-wraps the img, so the target tracks whatever size this pass rolled.
+    const hit = document.createElement('div');
+    hit.className = 'fly-hit';
+    hit.style.inset = FLY_HIT_INSET + '%';
+    hit.style.setProperty('--fly-rot', rot);
+    hit.style.animation = drift;
+    hit._flyLink = def.link;   // read back by flyLinkAt — no registry to keep in step with removal
+    carrier.appendChild(hit);
+  }
+  FLY_OVERLAY_EL.appendChild(carrier);
+}
+
+// Which linked flyover, if any, is under a point on the canvas. The overlay sits BEHIND the canvas,
+// so a DOM click can never reach it — but these are still rectangles on screen, and the .fly-hit
+// divs track exactly where, drift and all. Coordinates come in canvas-relative (scene.pointerX/Y)
+// and are shifted into client space to compare against getBoundingClientRect.
+// Called from pickAction ONLY after the scene ray has come back empty, which is what makes "behind
+// everything" true for clicks as well as for pixels: any mesh in front simply answers first.
+function flyLinkAt(canvasX, canvasY) {
+  if (!FLY_OVERLAY_EL) return null;
+  const r = canvas.getBoundingClientRect();
+  const x = r.left + canvasX, y = r.top + canvasY;
+  for (const hit of FLY_OVERLAY_EL.querySelectorAll('.fly-hit')) {
+    const b = hit.getBoundingClientRect();
+    if (x >= b.left && x <= b.right && y >= b.top && y <= b.bottom) return hit;
+  }
+  return null;
+}
+
+// Stand-in for the :hover the overlay can no longer receive, since the canvas covers it.
+function setFlyHot(hit) {
+  const el = hit ? hit.parentElement : null;
+  if (el === flyHotEl) return;
+  if (flyHotEl) flyHotEl.classList.remove('hot');
+  flyHotEl = el;
+  if (el) el.classList.add('hot');
 }
 
 // ── photo popups (one per videoAssets folder) ───────────────────────────────────
@@ -1782,7 +2397,11 @@ class InkWakePlugin extends BABYLON.MaterialPluginBase {
 // Create a ground PNG poster that sways in the wind. style 'lean' (rigid tip about the base) or
 // 'bend' (foliage-like top wave). Seats its base on the terrain at (x,z) and registers for sway.
 function addGroundPng(url, opts) {
-  const { x, z, height, aspect, style, tilt = 0, fx = false } = opts;   // tilt = static lean about local Z (radians); fx = wake-up effect on approach
+  // tilt = static lean about local Z (radians); fx = wake-up effect on approach.
+  // Props only — one mesh per call. The decorations went through here once and it was the whole
+  // performance problem: 297 individually-drawn sheets cost ~22 ms of CPU a frame in per-mesh work.
+  // They are built as thin instances instead now; see buildDecor().
+  const { x, z, height, aspect, style, tilt = 0, fx = false } = opts;
   const W = height * aspect, H = height;
 
   const tex = new BABYLON.Texture(url, scene, false, true, undefined, null,
@@ -1840,6 +2459,96 @@ function addGroundPng(url, opts) {
     windPlanes.push({ pivot, style, phase, H, wake, baseY: gY, lift: H * LIFT_FRAC, prox: 0 });
     return plane;
   }
+}
+
+// ─── Decoration editor (?edit=1 only) ─────────────────────────────────────────
+// Point-and-click authoring for DECOR_PLACED. Click bare ground to plant the selected art, click a
+// piece to pull it out again, [ and ] to change art, C to copy the whole table to the clipboard.
+// Works in BOTH modes on purpose: the overview to lay the island out, third person to check how a
+// piece reads at eye level. Nothing here is registered unless EDIT_MODE is on.
+function setupDecorEditor({ DECOR_ART, decorGroups, decorAdd, decorRebuild }) {
+  const palette = Object.keys(DECOR_ART);
+  let sel = 0;
+
+  const hud = document.createElement('div');
+  hud.style.cssText = 'position:fixed;left:14px;bottom:14px;z-index:60;background:#2b2b2b;' +
+    'border:1px solid #454545;box-shadow:0 2px 6px rgba(0,0,0,0.4);color:#e8e8e8;' +
+    "font:13px/1.55 'Times New Roman',serif;padding:10px 14px;min-width:210px;";
+  document.body.appendChild(hud);
+  const refreshHud = () => {
+    hud.innerHTML =
+      '<div style="color:#f2872e;font-weight:bold;letter-spacing:.03em">DECORATION EDITOR</div>' +
+      '<div style="margin:5px 0 7px">brush: <b>' + palette[sel] + '</b> &nbsp;·&nbsp; placed: <b>' +
+      DECOR_PLACED.length + '</b></div>' +
+      '<div style="color:#9a9a9a;font-size:12px">click ground&nbsp;— plant<br>' +
+      'click piece&nbsp;— remove<br>[ ]&nbsp;— change art<br>C&nbsp;— copy table</div>';
+  };
+  refreshHud();
+
+  scene.onPointerObservable.add((pi) => {
+    if (pi.type !== BABYLON.PointerEventTypes.POINTERTAP) return;
+    const hit = pi.pickInfo && pi.pickInfo.pickedMesh;
+
+    // Did the click land on a decoration? Every piece of one art file shares a single mesh now, so
+    // the mesh alone does not identify it — thinInstanceIndex says WHICH piece of that group was hit.
+    if (hit) {
+      for (const g of decorGroups.values()) {
+        if (g.mesh !== hit) continue;
+        const idx = pi.pickInfo.thinInstanceIndex;
+        if (idx === undefined || idx < 0 || idx >= g.recs.length) return;
+        const rec = g.recs[idx];
+        g.recs.splice(idx, 1);
+        g.ys.splice(idx, 1);                       // kept in step with recs, or every later piece
+        const ri = DECOR_PLACED.indexOf(rec);      // would sit at its neighbour's ground height
+        if (ri >= 0) DECOR_PLACED.splice(ri, 1);
+        decorRebuild(g);
+        refreshHud();
+        return;
+      }
+    }
+
+    // Not a decoration — re-pick against the terrain alone, so a click that landed on a prop plants
+    // nothing rather than dropping a bush wherever the ray happened to continue.
+    const g2 = scene.pick(scene.pointerX, scene.pointerY, m => m === groundMesh);
+    if (!g2 || !g2.hit) return;
+    const art = DECOR_ART[palette[sel]];
+    const rec = {
+      f: palette[sel],
+      x: +((g2.pickedPoint.x - islandCX) / R).toFixed(4),
+      z: +((g2.pickedPoint.z - islandCZ) / R).toFixed(4),
+      // Rolled once, here, and written into the record — so the piece keeps this exact size and
+      // lean on every future load instead of reshuffling itself each refresh.
+      h: +(art.h[0] + Math.random() * (art.h[1] - art.h[0])).toFixed(1),
+      t: +((Math.random() * 2 - 1) * DECOR_TILT).toFixed(3),
+    };
+    DECOR_PLACED.push(rec);
+    const grp = decorAdd(rec);
+    if (grp) decorRebuild(grp);
+    refreshHud();
+  });
+
+  const dump = () => {
+    const rows = DECOR_PLACED.map(r =>
+      "  { f:'" + r.f + "', x:" + String(r.x).padStart(7) + ", z:" + String(r.z).padStart(7) +
+      ", h:" + String(r.h).padStart(5) + ", t:" + String(r.t).padStart(6) + " },").join('\n');
+    return 'const DECOR_PLACED = [\n' + rows + '\n];';
+  };
+
+  document.addEventListener('keydown', (e) => {
+    if (e.code === 'BracketLeft')  { sel = (sel + palette.length - 1) % palette.length; refreshHud(); }
+    if (e.code === 'BracketRight') { sel = (sel + 1) % palette.length; refreshHud(); }
+    if (e.code === 'KeyC') {
+      const text = dump();
+      // Log unconditionally: a clipboard write can be refused outright (unfocused tab, insecure
+      // origin) and there is no worse outcome here than losing an afternoon of placements.
+      console.log(text);
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(text)
+          .then(() => { hud.style.borderColor = '#f2872e'; setTimeout(() => hud.style.borderColor = '#454545', 400); })
+          .catch(() => console.warn('clipboard refused — copy the table logged above instead'));
+      }
+    }
+  });
 }
 
 // Wind-gust streaks — hand-drawn gust lines that ride the gust front across the scene. Build a small
@@ -2115,6 +2824,13 @@ BABYLON.SceneLoader.ImportMesh('', 'https://static.wixstatic.com/3d/', '863c39_f
       if (nySum < 0) for (let i = 0; i < newNormals.length; i++) newNormals[i] = -newNormals[i];
       groundMesh.setVerticesData(BABYLON.VertexBuffer.NormalKind, newNormals);
       groundMesh.refreshBoundingInfo();
+      // Index the finished terrain for ray picking. Without this every pickWithRay against the
+      // ground is a brute-force sweep of the whole heightfield, and this mesh is picked constantly:
+      // twice per decorative piece at load, and by the prop seating besides. An octree turns each
+      // of those from "test every triangle" into "test the few in the right box". Built here, at
+      // the end, because it indexes the geometry as it stands — rebuilding the vertices after this
+      // would leave the tree describing a surface that no longer exists.
+      groundMesh.createOrUpdateSubmeshesOctree(64, 2);
     }
     // Island bounds for the wind floaters (centre + radius of the blob).
     const gbb = groundMesh.getBoundingInfo().boundingBox;
@@ -2240,13 +2956,15 @@ BABYLON.SceneLoader.ImportMesh('', 'https://static.wixstatic.com/3d/', '863c39_f
     const SCENE_PROPS = [
       // The barn anchors the layout at the centre; the rest are fanned out around it on distinct
       // bearings at varied radii, so no two read as a clump from any approach angle. The current
-      // spots for routeCellar / tractor / wheelBarrow / toxicBarrels come from the 2026-08-20
-      // marked-up overview screenshot — each was read off the circle drawn on that render.
+      // spots for tractor / wheelBarrow / toxicBarrels come from the 2026-08-20 marked-up overview
+      // screenshot — each was read off the circle drawn on that render. The coast spot on that
+      // screenshot was drawn for routeCellar, but the haystack stands there now: the two swapped
+      // places, so routeCellar took the haystack's old spot in closer to the barn.
       // name              file                    art px         x·R      z·R    tilt      fx
       { name:'barn',         file:'barn.png',         px:[4033,2806], x: 0.00, z: 0.00, tilt: 0,     fx:true  },
       { name:'tree',         file:'tree.png',         px:[2308,3356], x: 0.37, z: 0.21, tilt: 0.03,  fx:false },
-      { name:'haystack',     file:'haystack.png',     px:[ 943, 929], x:-0.35, z:-0.19, tilt:-0.04,  fx:false },
-      { name:'routeCellar',  file:'routeCellar.png',  px:[1412, 576], x:-0.60, z: 0.41, tilt: 0.025, fx:false },   // pushed out toward the near-left coast
+      { name:'haystack',     file:'haystack.png',     px:[ 943, 929], x:-0.60, z: 0.41, tilt:-0.04,  fx:false },   // out toward the near-left coast
+      { name:'routeCellar',  file:'routeCellar.png',  px:[1412, 576], x:-0.35, z:-0.19, tilt: 0.025, fx:false },   // in closer, round to the near-left of the barn
       { name:'tractor',      file:'tractor.png',      px:[1836,1287], x: 0.94, z:-0.12, tilt:-0.02,  fx:false },   // past the tree, out on the far-right shoulder — the widest prop in the set at 0.95·R
       { name:'wheelBarrow',  file:'wheelBarrow.png',  px:[1094, 639], x:-0.30, z: 0.72, tilt: 0.04,  fx:false },   // off the walk-in path to the left, out past the spawn point
       { name:'toxicBarrels', file:'toxicBarrels.png', px:[1079, 817], x: 0.31, z:-0.68, tilt:-0.03,  fx:false },   // round the back of the barn and further off, hidden on approach
@@ -2262,6 +2980,145 @@ BABYLON.SceneLoader.ImportMesh('', 'https://static.wixstatic.com/3d/', '863c39_f
         height: H, aspect, style: 'paper', tilt: p.tilt, fx: p.fx,
       });
     }
+    // ─── Decorations ──────────────────────────────────────────────────────────────────────────
+    // ONE mesh per art file; every piece of that art is a THIN INSTANCE of it. Twelve meshes, twelve
+    // draw calls, for however many hundred pieces are placed.
+    //
+    // This is the fix for the frame rate, and it was found by measuring rather than guessing. As 297
+    // separate meshes the decorations cost ~22 ms of CPU every frame — half the frame budget — while
+    // GPU time never moved: turning them off took draw calls 324 -> 27 and CPU 44 ms -> 21 ms. The
+    // cost was never the pixels, the textures or the transparency. Babylon spends CPU per MESH per
+    // frame on world matrices, material binding and uniform uploads, so the cost was simply the
+    // NUMBER OF OBJECTS. Four earlier passes optimised everything except that.
+    //
+    // Thin instances rather than a plain merge, because merging would weld them into static geometry
+    // and the sway would be gone. Each instance keeps its own transform, so each piece still leans in
+    // the wind; the difference is that the whole group moves as one matrix buffer written and
+    // uploaded once, instead of 297 meshes each doing their own per-frame bookkeeping.
+    const DECOR_ART = {};
+    for (const k of DECOR_KINDS) {
+      for (const a of k.files) {
+        DECOR_ART[a.file.replace('.png', '')] = { url: DECOR_DIR + a.file, ar: a.ar, style: k.style, h: k.h };
+      }
+    }
+    const decorGroups = new Map();   // art key → { art, mesh, recs[], ys[], mats }
+
+    const decorGroupFor = (key) => {
+      let g = decorGroups.get(key);
+      if (g) return g;
+      const art = DECOR_ART[key];
+      if (!art) { console.warn('DECOR_PLACED references unknown art:', key); return null; }
+      const tex = new BABYLON.Texture(art.url, scene, false, true, undefined, null,
+        () => console.warn('decoration PNG failed to load:', art.url));
+      tex.hasAlpha = true;
+      const mat = new BABYLON.StandardMaterial('decorMat_' + key, scene);
+      mat.diffuseTexture = tex; mat.useAlphaFromDiffuseTexture = true;
+      mat.emissiveTexture = tex; mat.emissiveColor = new BABYLON.Color3(0.7, 0.7, 0.7);
+      mat.specularColor = new BABYLON.Color3(0, 0, 0);
+      mat.backFaceCulling = false;
+      mat.transparencyMode = BABYLON.Material.MATERIAL_ALPHABLEND;
+      // A unit quad, X -0.5..0.5 and Y 0..1, so an instance matrix scales it to size and plants its
+      // BASE on the ground point — the same anchoring the per-piece pivot used to provide.
+      const mesh = buildVerticalPlane('decor_' + key, 1, 1, 1, 1);
+      mesh.material = mat;
+      mesh.receiveShadows = true;        // but never a shadow CASTER: transparencyShadow is costly
+      mesh.checkCollisions = false;      // walk straight through scenery
+      mesh.isPickable = EDIT_MODE;       // only the editor ever needs to hit one
+      mesh.thinInstanceEnablePicking = EDIT_MODE;
+      excludedCamMeshes.add(mesh);       // the camera ray ignores decoration
+      g = { key, art, mesh, recs: [], ys: [], mats: null };
+      decorGroups.set(key, g);
+      return g;
+    };
+
+    // Scratch objects, reused across every instance of every frame — allocating a Vector3 per piece
+    // per frame would hand the garbage collector 300 objects a frame to clean up.
+    const _dS = new BABYLON.Vector3(), _dP = new BABYLON.Vector3();
+    const _dQ = new BABYLON.Quaternion(), _dM = new BABYLON.Matrix();
+
+    // Compose one matrix per piece: scale to its size, tilt by its own lean, plant it on the ground.
+    // `wind` is null at build time (rest pose) and supplied each frame while swaying.
+    const decorWriteMatrices = (g, wind) => {
+      const n = g.recs.length;
+      if (!g.mats || g.mats.length !== n * 16) g.mats = new Float32Array(n * 16);
+      for (let i = 0; i < n; i++) {
+        const r = g.recs[i];
+        const x = islandCX + r.x * R, z = islandCZ + r.z * R;
+        let pitch = 0;
+        if (wind) {
+          const w = getWind(windT, x, z);
+          // Same model as the props' 'lean': tip downwind about the base, with a per-piece flutter
+          // so a gust does not move the whole island in lockstep.
+          const flutter = 0.7 + 0.5 * Math.sin(windT * 2.0 + i * 1.7)
+                              + 0.2 * Math.sin(windT * 3.3 + i * 2.9);
+          pitch = w.strength * LEAN_GAIN * flutter * w.dz;
+        }
+        _dS.set(r.h * g.art.ar, r.h, 1);
+        _dP.set(x, g.ys[i], z);
+        BABYLON.Quaternion.RotationYawPitchRollToRef(0, pitch, r.t, _dQ);
+        BABYLON.Matrix.ComposeToRef(_dS, _dQ, _dP, _dM);
+        _dM.copyToArray(g.mats, i * 16);
+      }
+    };
+
+    const decorApply = (g) => {
+      // Deleting the last piece of an art file leaves a zero-length buffer, which is not something to
+      // hand Babylon — drop the instance count to nothing instead and leave the mesh dormant.
+      if (!g.recs.length) { g.mesh.thinInstanceCount = 0; return; }
+      g.mesh.thinInstanceSetBuffer('matrix', g.mats, 16, false);   // false → the buffer stays writable
+      g.mesh.thinInstanceRefreshBoundingInfo(true);
+    };
+    const decorRebuild = (g) => { decorWriteMatrices(g, null); decorApply(g); };
+
+    // Seat a piece on the terrain and add it to its group. The ground probe happens once, here, and
+    // the answer is kept in g.ys — a per-frame raycast for scenery that never moves would be absurd.
+    const decorAdd = (rec) => {
+      const g = decorGroupFor(rec.f);
+      if (!g) return null;
+      const x = islandCX + rec.x * R, z = islandCZ + rec.z * R;
+      const ray = new BABYLON.Ray(new BABYLON.Vector3(x, 5000, z), new BABYLON.Vector3(0, -1, 0), 10000);
+      const hit = scene.pickWithRay(ray, m => m === groundMesh);
+      g.recs.push(rec);
+      g.ys.push((hit && hit.hit) ? hit.pickedPoint.y : 0);
+      return g;
+    };
+
+    if (!NO_DECOR) {
+      for (const rec of DECOR_PLACED) decorAdd(rec);
+      for (const g of decorGroups.values()) decorRebuild(g);
+      // One matrix-buffer rewrite per art file per frame, in place of 297 meshes' worth of per-mesh
+      // work. Runs in both modes, so the sway reads from the overview as well as on the ground.
+      //
+      // …but only while there is actually wind. Gusts are intermittent by design (a few seconds of
+      // blowing, then 3-10s of calm — see updateWind), and between them every piece is upright and
+      // every matrix identical to the one already in the buffer. Rewriting 297 of them to say
+      // "unchanged" is pure waste. Write the rest pose ONCE when a gust dies, then go quiet until
+      // the next one starts.
+      let decorAtRest = false;
+      updateDecorSway = () => {
+        if (!windGust.active) {
+          if (decorAtRest) return;                 // already upright and already uploaded
+          decorAtRest = true;
+          for (const g of decorGroups.values()) {
+            if (!g.recs.length) continue;
+            decorWriteMatrices(g, null);           // null wind = rest pose
+            g.mesh.thinInstanceBufferUpdated('matrix');
+          }
+          return;
+        }
+        decorAtRest = false;
+        for (const g of decorGroups.values()) {
+          if (!g.recs.length) continue;
+          decorWriteMatrices(g, true);
+          g.mesh.thinInstanceBufferUpdated('matrix');
+        }
+      };
+    }
+    console.log('decorations:', DECOR_PLACED.length, 'pieces in', decorGroups.size,
+                'draw calls' + (EDIT_MODE ? ' — editor ON' : ''));
+
+    if (EDIT_MODE) setupDecorEditor({ DECOR_ART, decorGroups, decorAdd, decorRebuild });
+
     const barnProp = props.barn;
     // ─── Prop links ───────────────────────────────────────────────────────────────────────────
     // Triggered by CLICK only (the old proximity/collision trigger is gone). A linked prop is
@@ -2274,6 +3131,8 @@ BABYLON.SceneLoader.ImportMesh('', 'https://static.wixstatic.com/3d/', '863c39_f
     // The barn is the one prop routed per-spot rather than as a whole sheet, so its action hangs
     // off barnSpots below; every other prop takes its action straight from this table.
     // Still unspoken for, if more props ever want one: Just Borg, Nick At Home, Rojo.
+    // (The flying egg goes to a single Just Borg video by URL — see FLY_PNGS up top — so the folder
+    // itself is still free for a prop that wants the whole grid.)
     // (Make A Joyful Noise is spoken for — it hangs off the barn's cupola, in barnSpots below.)
     const PROP_ACTIONS = {
       boat:         { popup: 'Vote Mail Is Easy' },
@@ -2321,7 +3180,11 @@ BABYLON.SceneLoader.ImportMesh('', 'https://static.wixstatic.com/3d/', '863c39_f
       if (a.newTab) window.open(a.url, '_blank'); else window.location.href = a.url;
     };
     // Catch a folder renamed on disk but not here (or vice versa) at load, not on the click.
-    for (const a of [...Object.values(PROP_ACTIONS), ...barnSpots.map(s => s.action)]) {
+    // FLY_PNGS is in the sweep too. Its only link today is a plain URL, which this check ignores —
+    // but the field accepts a { popup } just as PROP_ACTIONS does, and a link that breaks only when
+    // someone happens to click a passing egg breaks in front of a visitor rather than in front of us.
+    for (const a of [...Object.values(PROP_ACTIONS), ...barnSpots.map(s => s.action),
+                     ...FLY_PNGS.map(f => f.link)]) {
       if (a && a.popup && !VIDEO_COLLECTIONS[a.popup]) console.warn('prop popup has no videoAssets collection:', a.popup);
     }
     const resolveBarnSpot = (u, v) => {
@@ -2341,9 +3204,15 @@ BABYLON.SceneLoader.ImportMesh('', 'https://static.wixstatic.com/3d/', '863c39_f
     // The action a pick lands on, or null. Both the tap and the hover cursor go through here, so
     // the pointing hand and the click can never disagree about what is live.
     pickAction = (info) => {
-      if (mode !== 'tp') return null;                       // props are live only out on the farm
+      if (mode !== 'tp') { flyHovered = null; return null; }  // props are live only out on the farm
       const picked = info && info.pickedMesh;
-      if (!picked) return null;
+      if (!picked) {
+        // Nothing in the scene under the pointer — open sky, the one place a flyover is visible.
+        // Reaching them only here is what keeps them behind everything: a mesh in front returns below.
+        flyHovered = flyLinkAt(scene.pointerX, scene.pointerY);
+        return flyHovered ? flyHovered._flyLink : null;
+      }
+      flyHovered = null;
       if (picked === barnProp) {                            // per-spot routing
         const uv = info.getTextureCoordinates ? info.getTextureCoordinates() : null;
         if (!uv) return null;
@@ -2356,6 +3225,7 @@ BABYLON.SceneLoader.ImportMesh('', 'https://static.wixstatic.com/3d/', '863c39_f
 
     scene.onPointerObservable.add((pi) => {
       if (pi.type !== BABYLON.PointerEventTypes.POINTERTAP) return;   // a click/tap (not a drag-rotate)
+      if (EDIT_MODE) return;   // while editing, every click belongs to the editor — no popups
       runAction(pickAction(pi.pickInfo));
     });
 
@@ -2415,6 +3285,10 @@ function switchToTP() {
   tpCamera.viewport   = new BABYLON.Viewport(0, 0, 0.0001, 0.0001);
   viewCamera.viewport = new BABYLON.Viewport(0, 0, 1, 1);
   playerLight.setEnabled(true);   // player orb on in third-person
+  // Pull the next flyover in on entry, so dropping down out of the overview is met with sky traffic
+  // within a few seconds rather than a fresh 8-22s wait. (Passes now fire in both modes, so nothing
+  // is being burned up in iso any more — this is just a welcome, not a repair.)
+  nextFlyT = Math.min(nextFlyT, windT + _rand(1.5, 5));
   canvas.focus();
   document.getElementById('modeLabel').textContent = 'third person \u2014 arrows to move \u00b7 shift to sprint \u00b7 space to jump \u00b7 drag to look \u00b7 esc to exit';
   document.getElementById('toggleBtn').textContent = 'overview';
@@ -2640,8 +3514,77 @@ function floorDist() {
   return (hit && hit.hit) ? Math.max(0, hit.distance - tpCamera.ellipsoid.y) : Infinity;
 }
 
+// ─── Perf readout ─────────────────────────────────────────────────────────────
+// ?perf=1 only — a live readout, so a claim about performance can be checked instead of assumed.
+const _perf = (() => {
+  if (!PERF_MODE) return null;
+  const el = document.createElement('div');
+  el.style.cssText = 'position:fixed;right:14px;bottom:14px;z-index:60;background:#2b2b2b;' +
+    'border:1px solid #454545;color:#e8e8e8;font:12px/1.5 monospace;padding:9px 12px;' +
+    'white-space:pre;pointer-events:none;';
+  document.body.appendChild(el);
+  const eng = new BABYLON.EngineInstrumentation(engine);
+  eng.captureGPUFrameTime = true;
+  // Draw calls come from SceneInstrumentation, not the engine. engine.drawCalls does not exist —
+  // reading it is what made this line print `undefined` the first time round.
+  const sc = new BABYLON.SceneInstrumentation(scene);
+  sc.captureDrawCalls = true;
+  // Break the CPU half down by subsystem. Babylon meters these itself, which beats switching things
+  // off one at a time and reloading — the guessing that cost this project four wasted passes.
+  sc.captureSpritesRenderTime = true;          // the 12,150-sprite star dome
+  sc.captureRenderTargetsRenderTime = true;    // the 2048px shadow map, re-rendered every frame
+  sc.capturePhysicsTime = true;                // Havok
+  sc.captureActiveMeshesEvaluationTime = true; // per-frame culling / mesh selection
+  return { el, eng, sc, next: 0 };
+})();
+function updatePerfHud(now) {
+  if (!_perf || now < _perf.next) return;
+  _perf.next = now + 250;
+  const fps = engine.getFps();
+  const gpu = _perf.eng.gpuFrameTimeCounter.lastSecAverage / 1e6;   // ns → ms
+  // The number worth having. Total frame time is 1000/fps; whatever the GPU did not spend, the CPU
+  // did. Which half is over budget decides where to look, and not having this split is precisely
+  // how several passes went into subsystems that were never the cost.
+  const frame = fps > 0 ? 1000 / fps : 0;
+  const cpu   = gpu > 0 ? Math.max(0, frame - gpu) : 0;
+  const budget = 16.7;                                             // one frame at 60fps
+  const flag = (ms) => ms > budget ? '  OVER' : '';
+  const off = [NO_STARS && 'stars', NO_WARP && 'warp', NO_DECOR && 'decor'].filter(Boolean).join(' ');
+  // Babylon's counters report in ms already; a dash means the counter never saw that subsystem run.
+  const ms = (c) => (c && c.lastSecAverage > 0.01) ? c.lastSecAverage.toFixed(1) + ' ms' : '-';
+  _perf.el.textContent =
+    'fps      ' + fps.toFixed(0) + '\n' +
+    'frame    ' + frame.toFixed(1) + ' ms\n' +
+    'gpu      ' + (gpu > 0 ? gpu.toFixed(1) + ' ms' + flag(gpu) : 'n/a') + '\n' +
+    'cpu      ' + (cpu > 0 ? cpu.toFixed(1) + ' ms' + flag(cpu) : 'n/a') + '\n' +
+    'scale    ' + engine.getHardwareScalingLevel().toFixed(2) + '\n' +
+    'render   ' + engine.getRenderWidth() + 'x' + engine.getRenderHeight() + '\n' +
+    'draws    ' + _perf.sc.drawCallsCounter.current + '\n' +
+    'meshes   ' + scene.getActiveMeshes().length + ' / ' + scene.meshes.length + '\n' +
+    '— cpu breakdown —\n' +
+    'sprites  ' + ms(_perf.sc.spritesRenderTimeCounter) + '\n' +
+    'shadows  ' + ms(_perf.sc.renderTargetsRenderTimeCounter) + '\n' +
+    'physics  ' + ms(_perf.sc.physicsTimeCounter) + '\n' +
+    'meshEval ' + ms(_perf.sc.activeMeshesEvaluationTimeCounter) + '\n' +
+    '— our loop —\n' +
+    'player   ' + _jt.player.toFixed(1) + ' ms\n' +
+    'sway     ' + _jt.sway.toFixed(1) + ' ms\n' +
+    'decor    ' + _jt.decor.toFixed(1) + ' ms\n' +
+    'arrows   ' + _jt.arrows.toFixed(1) + ' ms\n' +
+    'hover    ' + _jt.hover.toFixed(1) + ' ms\n' +
+    'stars    ' + _jt.stars.toFixed(1) + ' ms\n' +
+    'off      ' + (off || '-');
+}
+
+// Per-section timings for our OWN render-loop work, which Babylon's counters cannot see. The
+// subsystem breakdown accounted for only 5.6 ms of 23 ms, so the rest is in here somewhere; six
+// performance.now() calls a frame is nothing next to knowing which line it is.
+const _jt = { player: 0, sway: 0, decor: 0, arrows: 0, hover: 0, stars: 0 };
+
 // ─── Render loop ──────────────────────────────────────────────────────────────
 engine.runRenderLoop(() => {
+  const _t0 = performance.now();
+  updatePerfHud(_t0);
   updateIsoKeys();
   updateCrouch();
 
@@ -2785,6 +3728,19 @@ engine.runRenderLoop(() => {
     }
   }
 
+  // Sky flyovers — the constellations/egg drift past on their own clock, with no relation to the
+  // gusts. Driven off windT (rather than a setTimeout) so it stops with the render loop on a
+  // backgrounded tab instead of queueing up a burst.
+  // They fire in BOTH modes. They used to be third-person only, which meant any pass that came due
+  // while you were up in the overview was spent on an empty screen. They read fine from up there:
+  // the layer sits behind the canvas and the sky around the island clears transparent, so a pass
+  // shows through wherever the island does not cover. (The egg's CLICK stays third-person only —
+  // see pickAction — because the overview is a map and every prop on it is inert too.)
+  if (windT >= nextFlyT) {
+    nextFlyT = windT + _rand(FLY_EVERY_MIN, FLY_EVERY_MAX);
+    flyPropAcross();
+  }
+
   // Fell off the island? After 3s below the terrain, respawn at the start.
   if (tpMesh && tpCamera.position.y < islandFloorY - 40) {
     fallTime += dt;
@@ -2816,6 +3772,9 @@ engine.runRenderLoop(() => {
     }
   }
 
+  _jt.player = performance.now() - _t0;   // iso keys, crouch, feet planting, jump, terrain rays
+  const _t1 = performance.now();
+
   // Ground PNGs sway — sampled at each plane's own position so a gust ripples across them.
   for (let i = 0; i < windPlanes.length; i++) {
     const wp = windPlanes[i];
@@ -2836,6 +3795,9 @@ engine.runRenderLoop(() => {
                                                          // off vertical, so the cast shadow
                                                          // slides out from under the sheet
     }
+    // windPlanes is the eight props now, nothing more, so every one of them animates every frame in
+    // both modes. The distance and mode gating that used to live here was for the decorations, and
+    // they are no longer individual meshes — see buildDecor().
     const w = getWind(windT, node.position.x, node.position.z);
     const flutter = 0.7 + 0.5 * Math.sin(windT * 2.0 + wp.phase) + 0.2 * Math.sin(windT * 3.3 + wp.phase * 1.7);
     if (wp.style === 'lean') {
@@ -2870,8 +3832,19 @@ engine.runRenderLoop(() => {
     }
   }
 
+  _jt.sway = performance.now() - _t1;
+  const _t2 = performance.now();
+
+  if (updateDecorSway) updateDecorSway();   // decorations lean too — one matrix buffer per art file
+  _jt.decor = performance.now() - _t2;
+  const _t3 = performance.now();
+
   updatePropArrows();  // aim the pop-up arrows (after the wp loop above: it moves the props they track)
+  _jt.arrows = performance.now() - _t3;
+  const _t4 = performance.now();
+
   updateHoverCursor(); // …and show the pointing hand if the mouse is resting on something live
+  _jt.hover = performance.now() - _t4;
 
   // Prevent collision slide-response from pushing the player upward.
   // moveWithCollisions computes a slide vector along the hit surface normal;
