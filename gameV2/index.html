@@ -548,6 +548,11 @@ const DECOR_KINDS = [
 // What went with the scatter: the coverage guarantee. Nothing now stops a wide stretch of bare
 // ground — that is a thing to judge by eye. The old scatter is in git if it is ever wanted back.
 const DECOR_TILT = 0.07;           // radians: the ± range the editor rolls a new piece's lean within
+// Alpha cutoff for the decoration art — see the note by their material for why they are alpha TESTED.
+// Mipmaps average a cutout's alpha down with distance, so too high a value makes far-off grass thin
+// out and vanish; too low and the near-transparent fringe around each ink stroke shows as a halo.
+// 0.35 rather than Babylon's default 0.4 holds the distant pieces together.
+const DECOR_ALPHA_CUTOFF = 0.35;
 // Hand-placed decorations. `f` keys into DECOR_KINDS' files; `x`/`z` are fractions of R, the same
 // units SCENE_PROPS uses, so both tables read alike and both survive a change to the island's size.
 // `h` (world height) and `t` (tilt) are RECORDED rather than re-rolled at load — otherwise a piece
@@ -3016,7 +3021,27 @@ BABYLON.SceneLoader.ImportMesh('', 'https://static.wixstatic.com/3d/', '863c39_f
       mat.emissiveTexture = tex; mat.emissiveColor = new BABYLON.Color3(0.7, 0.7, 0.7);
       mat.specularColor = new BABYLON.Color3(0, 0, 0);
       mat.backFaceCulling = false;
-      mat.transparencyMode = BABYLON.Material.MATERIAL_ALPHABLEND;
+      // Alpha TEST, not alpha blend — and this is about CORRECTNESS, not speed. As a performance
+      // measure it was tried and measured worthless (GPU unmoved, CPU slightly up), because the
+      // thin-instance rewrite had already removed the sorting and overdraw it would have saved.
+      //
+      // But that same rewrite introduced a depth bug that only alpha testing fixes. Babylon writes
+      // depth for opaque materials ONLY (`setDepthWrite(alphaMode === ALPHA_DISABLE)`), so blended
+      // geometry is ordered purely by sorting transparent meshes on distanceToCamera. Every piece of
+      // one art file now shares ONE mesh, whose bounds span the island — so the whole group carries a
+      // single sort key of roughly "the middle of the map". Land that nearer than the barn and every
+      // instance draws over it, including the ones plainly behind it. Before instancing each piece
+      // was its own mesh with its own distance, which is why this never happened then.
+      //
+      // Alpha testing puts them in the OPAQUE pass, where the depth buffer resolves each piece per
+      // pixel and sort order stops mattering — the same reason engines cut out foliage rather than
+      // blending it. `discard` also means fully transparent texels write no depth, which is what
+      // rules out simply forcing depth writes on a blended material: the empty margin of a sheet
+      // would occlude whatever sits behind its rectangle.
+      //
+      // The usual cost is a harder edge, largely absorbed here by rendering at 2.5x and downsampling.
+      mat.transparencyMode = BABYLON.Material.MATERIAL_ALPHATEST;
+      mat.alphaCutOff = DECOR_ALPHA_CUTOFF;
       // A unit quad, X -0.5..0.5 and Y 0..1, so an instance matrix scales it to size and plants its
       // BASE on the ground point — the same anchoring the per-piece pivot used to provide.
       const mesh = buildVerticalPlane('decor_' + key, 1, 1, 1, 1);
