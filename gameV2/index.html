@@ -3617,7 +3617,9 @@ BABYLON.SceneLoader.ImportMesh('', 'https://static.wixstatic.com/3d/', '863c39_f
     const PROP_ACTIONS = {
       boat:         { popup: 'Vote Mail Is Easy' },
       haystack:     { popup: 'Nonprofits' },
-      routeCellar:  null,                                    // TODO: web link to be supplied — inert until then
+      // newTab, following the flyover egg: the farm is still there behind them, and a cellar is
+      // a place you look into rather than a way out of the island.
+      routeCellar:  { url: 'https://siennabroglie.wixsite.com/my-site-1/works-in-progress', newTab: true },
       toxicBarrels: { popup: 'Stay Home Safe Secure' },
       tractor:      { popup: 'Orange Man Adventure Theatre' },
       tree:         { popup: 'Mom My Straightman' },
