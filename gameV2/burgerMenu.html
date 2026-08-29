@@ -59,7 +59,9 @@
       width: 56px;
       transition: top 0.6s cubic-bezier(0.34, 1.1, 0.64, 1);
     }
-    .ing svg { display: block; overflow: visible; }
+    /* width:100% only — each layer's height falls out of its own aspect ratio, so re-exporting
+       the art at a different resolution can never change how tall it renders. */
+    .ing img { display: block; width: 100%; }
 
     /* Labels sit to the LEFT of the burger, right-aligned, absolutely positioned */
     /* Menu labels — flat GREY boxes matching the Mind Barn site: a 1pt border one shade
@@ -67,7 +69,12 @@
        highlight (white text on an orange fill). */
     .ing-label {
       position: absolute;
-      right: 72px;
+      /* Sits the same 20.4px clear of the burger as the game's "?" help box does, so the labels and
+         the help box share one right edge — 84px in from the viewport, which is where #helpBtn ends.
+         In panel coords rather than screen: #menu-panel is scaled 0.65 about its top-right, and this
+         offset is measured from #burger-wrap, itself 8px in. So 84px on screen is (84-22)/0.65 - 8.
+         The 22 is #menuFrame's own right offset in index.html — change either and redo this. */
+      right: 87.38px;
       text-align: right;
       font-family: 'Caveat', cursive;
       /* 35px here renders ~23px on screen once the panel's 0.65 scale is applied. */
@@ -102,87 +109,47 @@
 <div id="menu-panel">
   <div id="burger-wrap">
 
-    <!-- Each .ing has data-closed-top (stacked pos) and data-open-top (spread pos) -->
-    <!-- Heights are in px within the 56px-wide fixed SVG coordinate space         -->
+    <!-- Each .ing carries data-closed (stacked) and data-open (spread) tops, in px.
+         Order top to bottom: top bun, tomato, cheese, patty, lettuce, bottom bun — the same
+         sequence closed AND open, so layers never cross over each other mid-animation.
+         The closed tops reproduce burgerMenuCondensed.png: a tight stack 47px tall in which each
+         filling shows only a 3-5px sliver. That file is the reference for the collapsed look; it
+         is deliberately not shipped, since the six layers have to move independently. -->
 
-    <!-- TOP BUN -->
     <div class="ing" id="ing-bun-top" data-closed="0" data-open="0">
-      <svg width="56" height="22" viewBox="0 0 56 22"
-           fill="none" stroke="#111" stroke-width="1.5"
-           stroke-linecap="round" stroke-linejoin="round">
-        <path d="M4,20 Q4,2 28,2 Q52,2 52,20" fill="white"/>
-        <ellipse cx="20" cy="10" rx="2.2" ry="1.1" transform="rotate(-25,20,10)" fill="#111" stroke="none"/>
-        <ellipse cx="28" cy="7"  rx="2.2" ry="1.1" transform="rotate(5,28,7)"   fill="#111" stroke="none"/>
-        <ellipse cx="36" cy="10" rx="2.2" ry="1.1" transform="rotate(20,36,10)" fill="#111" stroke="none"/>
-        <rect x="4" y="19" width="48" height="3" rx="1.5" fill="white"/>
-      </svg>
+      <img src="burgerMenu-assets/burgerMenu_topBun.png" alt="" draggable="false">
     </div>
 
-    <!-- LETTUCE -->
+    <div class="ing" id="ing-tomato" data-closed="5" data-open="80">
+      <img src="burgerMenu-assets/burgerMenu_tomato.png" alt="" draggable="false">
+    </div>
+
+    <div class="ing" id="ing-cheese" data-closed="10" data-open="160">
+      <img src="burgerMenu-assets/burgerMenu_cheese.png" alt="" draggable="false">
+    </div>
+
+    <div class="ing" id="ing-patty" data-closed="15" data-open="240">
+      <img src="burgerMenu-assets/burgerMenu_patty.png" alt="" draggable="false">
+    </div>
+
     <div class="ing" id="ing-lettuce" data-closed="20" data-open="320">
-      <svg width="56" height="14" viewBox="0 0 56 14"
-           fill="none" stroke="#fff" stroke-width="1.8"
-           stroke-linecap="round" stroke-linejoin="round">
-        <path d="M1,7 Q8,1 15,7 Q22,13 29,7 Q36,1 43,7 Q49,11 55,7"/>
-        <path d="M1,10 Q8,4 15,10 Q22,16 29,10 Q36,4 43,10 Q49,14 55,10"
-              stroke-width="1" opacity="0.3"/>
-      </svg>
+      <img src="burgerMenu-assets/burgerMenu_lettuce.png" alt="" draggable="false">
     </div>
 
-    <!-- TOMATO -->
-    <div class="ing" id="ing-tomato" data-closed="26" data-open="160">
-      <svg width="56" height="12" viewBox="0 0 56 12"
-           fill="none" stroke="#111" stroke-width="1.4"
-           stroke-linecap="round" stroke-linejoin="round">
-        <rect x="2" y="1" width="52" height="10" rx="1.5" fill="white"/>
-        <line x1="20" y1="1" x2="20" y2="11" stroke-width="1"/>
-        <line x1="36" y1="1" x2="36" y2="11" stroke-width="1"/>
-        <ellipse cx="10" cy="6" rx="2.8" ry="1.6" fill="white"/>
-        <ellipse cx="28" cy="6" rx="2.8" ry="1.6" fill="white"/>
-        <ellipse cx="46" cy="6" rx="2.8" ry="1.6" fill="white"/>
-      </svg>
-    </div>
-
-    <!-- ONION -->
-    <div class="ing" id="ing-onion" data-closed="33" data-open="80">
-      <svg width="56" height="14" viewBox="0 0 56 14"
-           fill="none" stroke="#fff" stroke-width="1.8"
-           stroke-linecap="round" stroke-linejoin="round">
-        <path d="M1,7 Q14,0 28,7 Q42,14 55,7"/>
-        <path d="M1,10 Q14,3 28,10 Q42,17 55,10" stroke-width="1" opacity="0.3"/>
-        <path d="M1,4  Q14,-3 28,4  Q42,11 55,4"  stroke-width="1" opacity="0.3"/>
-      </svg>
-    </div>
-
-    <!-- PATTY -->
-    <div class="ing" id="ing-patty" data-closed="40" data-open="240">
-      <svg width="56" height="16" viewBox="0 0 56 16"
-           fill="none" stroke="#111" stroke-width="1.6"
-           stroke-linecap="round" stroke-linejoin="round">
-        <rect x="2" y="2" width="52" height="12" rx="5" fill="white"/>
-        <line x1="18" y1="3"  x2="16.5" y2="13" stroke-width="1.3" opacity="0.4"/>
-        <line x1="28" y1="3"  x2="26.5" y2="13" stroke-width="1.3" opacity="0.4"/>
-        <line x1="38" y1="3"  x2="36.5" y2="13" stroke-width="1.3" opacity="0.4"/>
-      </svg>
-    </div>
-
-    <!-- BOTTOM BUN -->
-    <div class="ing" id="ing-bun-bottom" data-closed="48" data-open="400">
-      <svg width="56" height="14" viewBox="0 0 56 14"
-           fill="none" stroke="#111" stroke-width="1.4"
-           stroke-linecap="round" stroke-linejoin="round">
-        <path d="M4,1 L52,1 Q54,1 54,4 L54,11 Q54,14 52,14 L4,14 Q2,14 2,11 L2,4 Q2,1 4,1 Z"
-              fill="white"/>
-        <path d="M4,10 Q28,15 52,10" stroke-width="1" opacity="0.3"/>
-      </svg>
+    <div class="ing" id="ing-bun-bottom" data-closed="26" data-open="400">
+      <img src="burgerMenu-assets/burgerMenu_bottomBun.png" alt="" draggable="false">
     </div>
 
     <!-- Labels — top set by JS to vertically center on open ingredient position -->
     <!-- Top and bottom buns intentionally have no menu label -->
-    <a class="ing-label" id="label-onion"      href="YOUR_URL_HERE">About</a>
-    <a class="ing-label" id="label-tomato"     href="YOUR_URL_HERE">Selected Works</a>
-    <a class="ing-label" id="label-patty"      href="YOUR_URL_HERE">Works in Progress</a>
-    <a class="ing-label" id="label-lettuce"    href="YOUR_URL_HERE">Manifestio</a>
+    <!-- Listed in the order they read down the screen, matching the filling each one sits beside:
+         tomato, cheese, patty, lettuce. The id keeps the INGREDIENT's name rather than the menu
+         item's, because layers is what pairs the two and the wording is expected to keep changing.
+         hrefs are still placeholders. -->
+    <a class="ing-label" id="label-tomato"     href="YOUR_URL_HERE">About</a>
+    <a class="ing-label" id="label-cheese"     href="YOUR_URL_HERE">Manifesto</a>
+    <a class="ing-label" id="label-patty"      href="YOUR_URL_HERE">Highlights</a>
+    <a class="ing-label" id="label-lettuce"    href="YOUR_URL_HERE">Works in Progress</a>
 
   </div>
 </div>
@@ -192,13 +159,16 @@
   const wrap    = document.getElementById('burger-wrap');
   const catcher = document.getElementById('click-catcher');
 
+  // ingH is each layer's RENDERED height at the fixed 56px column width, i.e. 56 x (h/w) of the
+  // source art. It drives panel sizing and label centring, so it has to match what the browser
+  // actually lays out — these are measured from the PNGs, not guessed.
   const layers = [
-    { ing: 'ing-bun-top',    label: null,               ingH: 22 },
-    { ing: 'ing-onion',      label: 'label-onion',      ingH: 14 },
-    { ing: 'ing-tomato',     label: 'label-tomato',     ingH: 12 },
-    { ing: 'ing-patty',      label: 'label-patty',      ingH: 16 },
-    { ing: 'ing-lettuce',    label: 'label-lettuce',    ingH: 14 },
-    { ing: 'ing-bun-bottom', label: null,               ingH: 14 },
+    { ing: 'ing-bun-top',    label: null,               ingH: 21.8 },
+    { ing: 'ing-tomato',     label: 'label-tomato',     ingH: 20.9 },
+    { ing: 'ing-cheese',     label: 'label-cheese',     ingH: 21.1 },
+    { ing: 'ing-patty',      label: 'label-patty',      ingH: 18.9 },
+    { ing: 'ing-lettuce',    label: 'label-lettuce',    ingH: 17.2 },
+    { ing: 'ing-bun-bottom', label: null,               ingH: 21.1 },
   ];
 
   const PANEL_PADDING = 8;  // panel padding top
@@ -214,12 +184,21 @@
   }
 
   // Read closed/open positions from data attributes
-  layers.forEach(l => {
+  layers.forEach((l, i) => {
     const el = document.getElementById(l.ing);
-    l.closedTop = parseInt(el.dataset.closed);
-    l.openTop   = parseInt(el.dataset.open);
+    l.closedTop = parseFloat(el.dataset.closed);
+    l.openTop   = parseFloat(el.dataset.open);
     // Set initial position
     el.style.top = l.closedTop + 'px';
+    // Paint order: the topmost layer laps OVER the one beneath it, all the way down. The .ing divs
+    // are absolutely positioned with no z-index of their own, so without this the browser falls back
+    // to DOM order and paints later elements on top — stacking the burger inside out, bottom bun
+    // over everything. It went unnoticed with the old inline SVG stand-ins because they barely
+    // overlapped; the real art has thick outlines and deep overlap, so it shows immediately.
+    // Derived from the array index rather than hard-coded in the CSS: `layers` is the one place the
+    // order is declared, so reordering it reorders the paint stack too and the two cannot drift.
+    // NB: set before the early return below, or the buns (which carry no label) would never get one.
+    el.style.zIndex = layers.length - i;
     // Pre-position labels at open pos, centered on ingredient
     if (!l.label) return;
     const labelEl = document.getElementById(l.label);
