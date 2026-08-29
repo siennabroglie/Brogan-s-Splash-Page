@@ -145,11 +145,20 @@
     <!-- Listed in the order they read down the screen, matching the filling each one sits beside:
          tomato, cheese, patty, lettuce. The id keeps the INGREDIENT's name rather than the menu
          item's, because layers is what pairs the two and the wording is expected to keep changing.
-         hrefs are still placeholders. -->
-    <a class="ing-label" id="label-tomato"     href="YOUR_URL_HERE">About</a>
-    <a class="ing-label" id="label-cheese"     href="YOUR_URL_HERE">Manifesto</a>
-    <a class="ing-label" id="label-patty"      href="YOUR_URL_HERE">Highlights</a>
-    <a class="ing-label" id="label-lettuce"    href="YOUR_URL_HERE">Works in Progress</a>
+
+         target="_blank" is not decoration here: this document is loaded in an iframe, so an
+         untargeted link would navigate the IFRAME and load the destination inside the little menu
+         box instead of the page. _blank also keeps the farm alive behind them, matching every other
+         outbound link in the game. rel goes with _blank so the opened page gets no window.opener.
+         (Use _top instead if a menu item should ever replace the game rather than open beside it.) -->
+    <a class="ing-label" id="label-tomato"  target="_blank" rel="noopener noreferrer"
+       href="https://siennabroglie.wixsite.com/my-site-1/about">About</a>
+    <a class="ing-label" id="label-cheese"  target="_blank" rel="noopener noreferrer"
+       href="https://siennabroglie.wixsite.com/my-site-1">Manifesto</a>
+    <a class="ing-label" id="label-patty"   target="_blank" rel="noopener noreferrer"
+       href="https://www.youtube.com/@borg22222/playlists">Highlights</a>
+    <a class="ing-label" id="label-lettuce" target="_blank" rel="noopener noreferrer"
+       href="https://siennabroglie.wixsite.com/my-site-1/works-in-progress">Works in Progress</a>
 
   </div>
 </div>
