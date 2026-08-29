@@ -506,6 +506,7 @@ function appendLinkLines(container) {
     a.className   = 'link-line';
     a.textContent = l.text;
     a.href        = l.url;
+    a.target      = '_top';   // break out of an embed and navigate the browser, not the iframe box
     wrapper.appendChild(a);
     if (i < linkLines.length - 1) wrapper.appendChild(document.createTextNode(' '));
   });
