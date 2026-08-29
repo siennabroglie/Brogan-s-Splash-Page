@@ -34,7 +34,34 @@
     --line: var(--box-line); --fill: var(--box);
   }
 
-  #modeLabel { display: none; }   /* top instruction line hidden */
+  /* Controls legend — top-left, balancing the burger's top-right. Same grey card as the rest of the
+     site chrome, but sized as a corner legend rather than a panel: no title, just the rows for the
+     mode you are in. Replaces the old ?-button overlay, which listed both modes at once and had
+     drifted out of date. Two columns so action and keys align; kbd + kbd auto-slashes alternatives.
+     Hidden on touch, where there is no keyboard to describe and #touchControls IS the control. */
+  #controls {
+    position: absolute; top: 18px; left: 22px; z-index: 20;
+    background: var(--box); color: var(--ink);
+    border: 1px solid var(--box-line); border-radius: 0;
+    box-shadow: var(--box-shadow);
+    padding: 12px 16px; font-family: var(--serif); font-weight: 400;
+    font-size: 15px; line-height: 1.35;
+    pointer-events: none;            /* a legend, never a click target */
+    user-select: none;
+  }
+  #controls.hidden { display: none; }
+  #controls .cset { display: none; }
+  #controls .cset.on { display: block; }
+  #controls .row {
+    display: grid; grid-template-columns: 62px 1fr; gap: 12px;
+    align-items: baseline; padding: 2px 0; color: var(--ink); white-space: nowrap;
+  }
+  #controls .row span:last-child { color: rgba(20,20,20,0.68); }
+  #controls kbd {
+    background: transparent; border: none; padding: 0; margin: 0;
+    font-family: var(--serif); font-weight: 400; font-size: inherit; color: var(--ink);
+  }
+  #controls kbd + kbd::before { content: '/ '; color: rgba(20,20,20,0.4); }
 
   #ui {
     position: absolute; bottom: 24px; left: 50%;
@@ -97,28 +124,6 @@
   }
   @keyframes sweep { 0%{left:-100%} 100%{left:100%} }
 
-  /* top-right cluster: burger menu (right) + help icon (left) */
-  #topRight {
-    position: absolute; top: 18px; right: 84px; z-index: 20;
-    display: flex; flex-direction: row-reverse; align-items: flex-start; gap: 10px;
-    font-family: var(--serif);
-  }
-  #helpBtn {
-    background: var(--box); color: var(--ink);
-    border: 1px solid var(--box-line); border-radius: 0;
-    box-shadow: var(--box-shadow);
-    /* Height matches the collapsed burger beside it, so the two line up top AND bottom (both sit at
-       top:18px). The burger is not a fixed size — it is burgerMenu.html's collapsed stack, 47.1px,
-       times the 0.65 scale on #menu-panel, so 30.6px. Restack those layers and this needs redoing.
-       Width stays 36 because the burger renders 36.4 wide (56px column x 0.65), so the two end up
-       near-identical boxes. */
-    width: 36px; height: 31px; font-family: var(--script); font-size: 26px; font-weight: 700;
-    cursor: pointer; flex: 0 0 auto;
-    display: flex; align-items: center; justify-content: center;
-    transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
-  }
-  #helpBtn:hover { background: var(--orange); border-color: var(--orange); color: #fff; }
-
   /* Burger menu — loaded from burgerMenu.html in an overlay iframe. Closed, it is a
      small transparent box beside the help icon; when the menu opens it posts a message
      and we expand the iframe to full-screen so its click-to-close catcher covers the page. */
@@ -129,50 +134,6 @@
     overflow: hidden;
   }
   #menuFrame.open { width: 100vw; height: 100vh; }
-  #helpOverlay {
-    position: absolute; inset: 0; background: rgba(0,0,0,0.9);
-    z-index: 50; display: none; align-items: center; justify-content: center;
-    padding: 40px; pointer-events: all;
-  }
-  #helpOverlay.visible { display: flex; }
-  /* Help panel — a grey card matching the Mind Barn site: 1pt lighter border + slight
-     shadow, a Caveat title set in a white-on-orange highlight tag, Caveat subheadings with
-     an orange rule, and Times New Roman body text. Two aligned columns (action / keys) so it
-     scans cleanly; key hints flow inline with auto slashes (no boxed keycaps). */
-  #helpPanel {
-    background: var(--box); color: var(--ink);
-    border: 1px solid var(--box-line); border-radius: 0;
-    box-shadow: var(--box-shadow);
-    padding: 26px 40px 30px; font-family: var(--serif); font-weight: 400;
-    font-size: 18px; line-height: 1.45;
-    min-width: 400px; max-width: 500px; max-height: calc(100vh - 80px); overflow-y: auto;
-  }
-  #helpPanel h2 {                        /* white Caveat in an orange highlight tag */
-    font-family: var(--script); font-weight: 700; font-size: 40px; line-height: 1.05;
-    color: #fff; background: var(--orange); display: inline-block;
-    padding: 2px 22px 4px; margin-bottom: 16px;
-  }
-  #helpPanel .h2-wrap { text-align: center; }
-  #helpPanel h3 {
-    font-family: var(--script); font-weight: 700; font-size: 27px;
-    color: var(--ink); margin: 18px 0 6px; padding-bottom: 3px;
-    border-bottom: 1px solid var(--orange);
-  }
-  #helpPanel .row {
-    display: grid; grid-template-columns: 180px 1fr; gap: 14px;
-    align-items: baseline; padding: 3px 0; color: var(--ink);
-  }
-  #helpPanel .row span:last-child { color: rgba(20,20,20,0.68); }
-  #helpPanel kbd {
-    background: transparent; border: none; padding: 0; margin: 0;
-    font-family: var(--serif); font-weight: 400; font-size: inherit; color: var(--ink);
-  }
-  #helpPanel kbd + kbd::before { content: '/ '; color: rgba(20,20,20,0.4); }
-  #helpPanel .note {
-    margin-top: 18px; padding-top: 12px; border-top: 1px solid rgba(20,20,20,0.22);
-    font-family: var(--serif); font-weight: 400; font-size: 15px;
-    color: rgba(20,20,20,0.6); text-align: center;
-  }
   /* Wind-gust overlay — wind PNGs sweep across the top of the frame when a gust passes the camera. */
   #wind-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 45vh; overflow: hidden; pointer-events: none; z-index: 8; }
   /* Two layers: the .gust carrier does the slow horizontal sweep + fade; the inner <img> runs a
@@ -255,26 +216,26 @@
 <div id="wind-overlay"></div>
 <div id="photo-popup"><div class="grid"></div></div>
 <div id="loading"><span>building barn&hellip; don't tell mom!</span><div id="loadingBar"></div></div>
-<div id="modeLabel">overview &mdash; left-drag to rotate &middot; right-drag to pan &middot; scroll to zoom</div>
-<div id="topRight">
-  <div id="helpBtn" title="H">?</div>
-</div>
 <!-- Burger menu — its own document, loaded as a transparent overlay iframe -->
 <iframe id="menuFrame" src="burgerMenu.html" title="Menu" scrolling="no"></iframe>
-<div id="helpOverlay">
-  <div id="helpPanel">
-    <div class="h2-wrap"><h2>Controls</h2></div>
-    <h3>Overview</h3>
-    <div class="row"><span>Rotate</span><span><kbd>left-drag</kbd> <kbd>arrows</kbd></span></div>
-    <div class="row"><span>Pan</span><span><kbd>right-drag</kbd> <kbd>two-finger drag</kbd></span></div>
-    <div class="row"><span>Zoom</span><span><kbd>scroll</kbd> <kbd>pinch</kbd> <kbd>alt+↑↓</kbd></span></div>
-    <h3>Third person</h3>
-    <div class="row"><span>Turn</span><span><kbd>←</kbd> <kbd>→</kbd> <kbd>A</kbd> <kbd>D</kbd></span></div>
-    <div class="row"><span>Move</span><span><kbd>↑</kbd> <kbd>↓</kbd> <kbd>W</kbd> <kbd>S</kbd></span></div>
+<!-- Controls legend, top-left, mirroring the burger's corner. Only the block for the CURRENT camera
+     mode is shown — applyModeVisibility() swaps them. Both lists are written from what the code
+     actually binds: in overview plain arrows drive the CHARACTER, not the camera, and the camera
+     has no rotate key at all (see updateIsoKeys). -->
+<div id="controls">
+  <div class="cset" data-mode="iso">
+    <div class="row"><span>Move</span><span><kbd>↑ ↓</kbd> <kbd>W S</kbd></span></div>
+    <div class="row"><span>Turn</span><span><kbd>← →</kbd> <kbd>A D</kbd></span></div>
+    <div class="row"><span>Rotate</span><span><kbd>left-drag</kbd></span></div>
+    <div class="row"><span>Pan</span><span><kbd>right-drag</kbd></span></div>
+    <div class="row"><span>Zoom</span><span><kbd>scroll</kbd> <kbd>alt+↑↓</kbd></span></div>
+  </div>
+  <div class="cset" data-mode="tp">
+    <div class="row"><span>Move</span><span><kbd>↑ ↓</kbd> <kbd>W S</kbd></span></div>
+    <div class="row"><span>Turn</span><span><kbd>← →</kbd> <kbd>A D</kbd></span></div>
     <div class="row"><span>Sprint</span><span><kbd>shift</kbd> + forward</span></div>
     <div class="row"><span>Jump</span><span><kbd>space</kbd></span></div>
-    <div class="row"><span>Look</span><span><kbd>mouse drag</kbd></span></div>
-    <div class="note">press <kbd>H</kbd> or click to close</div>
+    <div class="row"><span>Look</span><span><kbd>drag</kbd></span></div>
   </div>
 </div>
 <!-- Mobile third-person movement arrows (forward / turn left / turn right). Jump = double-tap. -->
@@ -330,7 +291,9 @@ const IS_MOBILE =
 
 // ─── Tuning ───────────────────────────────────────────────────────────────────
 const PLAYER_HEIGHT  = 68;            // 75 reduced 10% — fits barn staircase clearances
-const WALK_SPEED     = 5.0;           // island is large; 3.6 read as a trudge crossing it
+const WALK_SPEED     = 9.0;           // island is large; 3.6 read as a trudge crossing it and 5.0
+                                      // still did — this is what sprinting used to give, now the
+                                      // default pace, with shift left as a smaller boost on top
 const GRAVITY_PER_FRAME = 4.0;
 const TURN_SMOOTH    = 0.2;
 const CAMERA_DISTANCE = 80;
@@ -602,7 +565,9 @@ const JUMP_SMOOTH    = 0.20;              // applied vertical velocity eases tow
 const JUMP_CUSHION   = 32;                // cap descent speed only within this short zone of the floor
 const JUMP_CUSHION_V = 3.5;               // constant touchdown speed (gentle but not a crawl)
 const GROUND_PROBE  = 14;                 // feet-to-floor tolerance for the grounded test
-const SPRINT_MULT   = 1.8;                // forward sprint multiplier
+const SPRINT_MULT   = 1.33;               // forward sprint multiplier -> ~12. Cut from 1.8 when the
+                                          // base rose to 9: kept on 1.8 it would have doubled the old
+                                          // sprint, which overshoots props rather than covering ground
 // Ground terrain — the GLB ground_plane has no real mounds, only ~300 isolated noise spikes
 // poking out of near-flat ground. We replace its heightfield with smooth procedural rolling
 // (value-noise fBm) so it reads as natural varied mounds & dips with no sharp points.
@@ -3772,10 +3737,6 @@ function onReady() { document.getElementById('loading').style.display = 'none'; 
 document.addEventListener('keydown', (e) => {
   keys[e.code] = true;
   if (e.code === 'Escape' && mode === 'tp') { switchToIso(); e.preventDefault(); }
-  if (e.code === 'KeyH') toggleHelp();
-  if (e.code === 'Escape' && mode === 'iso') {
-    if (document.getElementById('helpOverlay').classList.contains('visible')) toggleHelp();
-  }
   if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space'].includes(e.code) && (mode === 'tp' || mode === 'iso')) {
     e.preventDefault();
   }
@@ -3805,7 +3766,6 @@ function switchToTP() {
   // is being burned up in iso any more — this is just a welcome, not a repair.)
   nextFlyT = Math.min(nextFlyT, windT + _rand(1.5, 5));
   canvas.focus();
-  document.getElementById('modeLabel').textContent = 'third person \u2014 arrows to move \u00b7 shift to sprint \u00b7 space to jump \u00b7 drag to look \u00b7 esc to exit';
   document.getElementById('toggleBtn').textContent = 'overview';
   applyModeVisibility();
   setTouchControls(true);   // show mobile arrows in third person
@@ -3820,7 +3780,6 @@ function switchToIso() {
   isoLerpTo({ target: new BABYLON.Vector3(tpCamera.position.x, 0, tpCamera.position.z) });
   isoCamera.attachControl(canvas, true);
   canvas.focus();
-  document.getElementById('modeLabel').textContent = 'overview \u2014 left-drag to rotate \u00b7 right-drag to pan \u00b7 scroll to zoom';
   document.getElementById('toggleBtn').textContent = 'third person';
   applyModeVisibility();
   setTouchControls(false);  // hide mobile arrows in overview
@@ -3832,6 +3791,13 @@ function switchToIso() {
 function setTouchControls(show) {
   const tc = document.getElementById('touchControls');
   if (tc) tc.style.display = (show && IS_MOBILE) ? 'block' : 'none';
+}
+
+// A keyboard legend has nothing to say on a phone — there is no keyboard, #touchControls IS the
+// control, and the corner space is worth more than the list. Hidden once, at load.
+if (IS_MOBILE) {
+  const c = document.getElementById('controls');
+  if (c) c.classList.add('hidden');
 }
 
 (function setupTouchControls() {
@@ -3891,6 +3857,11 @@ function setTouchControls(show) {
 // from the iso camera. The character keeps its position across the switch.
 function applyModeVisibility() {
   const iso = (mode === 'iso');
+  // Swap the top-left legend to the mode being entered. This runs on both switches AND at startup,
+  // so the panel never has to work out its own initial state.
+  for (const set of document.querySelectorAll('#controls .cset')) {
+    set.classList.toggle('on', set.dataset.mode === (iso ? 'iso' : 'tp'));
+  }
   if (groundMesh) groundMesh.setEnabled(true);
   for (const wp of windPlanes) if (wp.pivot) wp.pivot.setEnabled(true);
   // Character is larger in overview; feet offset scales with it so it stays planted.
@@ -3905,10 +3876,6 @@ document.getElementById('toggleBtn').addEventListener('click', () => {
   if (mode === 'iso') switchToTP(); else switchToIso();
 });
 
-// ─── Help ─────────────────────────────────────────────────────────────────────
-function toggleHelp() { document.getElementById('helpOverlay').classList.toggle('visible'); }
-document.getElementById('helpBtn').addEventListener('click', (e) => { e.stopPropagation(); toggleHelp(); });
-document.getElementById('helpOverlay').addEventListener('click', toggleHelp);
 
 // ─── Resize ───────────────────────────────────────────────────────────────────
 window.addEventListener('resize', () => { engine.resize(); });
