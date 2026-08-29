@@ -482,6 +482,106 @@ const ARROW_ANCHOR  = { x: 0, y: 0.55 };
 const ARROW_ANCHORS = {};        // per-prop overrides, same units — e.g. tractor: { x: -0.18, y: 0.42 }
 // The arrow's runtime lives inside the async IIFE below (it needs scene/canvas/mode).
 
+// ─── Triggered prop animations ────────────────────────────────────────────────
+// A prop comes alive as you walk up: a small sprite plays on its face — the squirrel leaning out
+// of the tree's knot-hole, and eventually a mouse in the haystack, smoke off the tractor. The
+// point of the timing is that the MOVEMENT catches your eye first and the arrow then tells you the
+// prop is clickable, so this fires while the arrow is still off.
+const ANIM_NEAR    = 440;    // world units, player → the sprite's own anchor. Deliberately wider
+                             // than ARROW_NEAR (375): the two anchors sit within a few units of
+                             // each other on a prop, so the larger radius reliably trips first and
+                             // the animation leads the arrow rather than racing it.
+const ANIM_RAMP_SEC = 2.10;  // seconds from hidden to fully out. The retreat is this same ramp
+                             // run backwards — ONE number governs both directions, so there is no
+                             // second constant to drift out of step when this one is tuned.
+const ANIM_LIFT    = 3;      // world units of clear air between the sprite and the prop's face…
+// …on top of however far that face can actually travel. The props are 'paper': their vertices
+// ripple out of plane by PAPER_AMP·W·strength·ny², and at the tree's knot-hole (ny 0.435, W 263,
+// gusting to WIND_BASE) that is ±5.8 units — nearly twice the clearance above. A flat 3 would let
+// the trunk swing THROUGH the squirrel, and because the sprite is alpha-tested (depth-written, see
+// below) the nearer surface wins per pixel, so it would not politely stay behind: it would slice
+// the squirrel in half a few times a second. So the standoff is derived per animation from the
+// ripple its own prop can produce at its own anchor height — see the `lift` field built below.
+const ANIM_WAVE_MAX = 1.5;   // peak of the flap's sin + 0.5·sin, matching the sway loop
+const ANIM_ALPHA_CUTOFF = 0.35;   // matches DECOR_ALPHA_CUTOFF — see the alpha-test note below
+
+// One 0..1 "emergence" value per animation does all the work: it ramps toward 1 while you are in
+// range and back toward 0 while you are out, and the frame on screen is just a threshold on it.
+// Walking away therefore plays the pop-out BACKWARDS for free, and turning round halfway resumes
+// from wherever it got to — no state machine, nothing to re-arm.
+//
+// mode 'emerge': `frames` are stages of one reversible pop-out, shown in order across the ramp.
+// mode 'rise':   the sprite CLIMBS out of the prop over the ramp instead of cutting between
+//   frames — for art that arrives as a single drawing, where a flipbook has nothing to flip. With
+//   `behind: true` it sits on the far side of the sheet, so the prop's own opaque paper hides it
+//   until it clears the silhouette: a real reveal, no mask needed, straight out of the depth
+//   buffer. `travel` is how far it climbs, as a fraction of the prop's height — enough that it
+//   starts fully under the prop's outline and ends with its body clear of it.
+// mode 'swap':   repaints the PROP'S OWN sheet rather than hanging a sprite on it, for art that
+//   redraws the whole object — the cellar with its door open. A frame marked `prop: true` is the
+//   drawing the prop already wears, so nothing is loaded twice. Where the frames differ in size the
+//   prop's mesh is re-proportioned to match, growing from its base so it stays planted. Such an
+//   animation is never hidden: at rest it simply wears frame 0.
+// mode 'chug':   the only mode driven by the CLOCK rather than by the ramp. emerge and rise are
+//   both functions of `e` alone, so they stop once it settles at 1; a chugging engine has to keep
+//   going while you stand there. `e` still gates it — easing the plume in as you approach and out
+//   as you leave — but the beat comes from windT. The puff SNAPS to each successive height rather
+//   than gliding: that is what reads as a chug rather than a drift, and it matches the limited-
+//   animation feel of the squirrel's two-frame flipbook. `chugs` beats per cycle, `rise` gained per
+//   beat, `period` seconds per cycle, `wobble` degrees it rocks back and forth within each beat so
+//   the climb is not perfectly rigid. The puff does not change size or opacity as it goes — it is
+//   the same drawing at the same weight, simply moved, which is how the rest of the scene behaves.
+// x/y anchor the sprite's BASE-CENTRE in the prop's own sheet space — x across from the centre
+// (-0.5 … +0.5), y up from the ground line (0 = where the sheet meets the terrain, 1 = top edge) —
+// the same convention ARROW_ANCHOR uses just above.
+// h is the world height of frame 0. Every other frame is sized from its OWN pixel size at that
+// same units-per-pixel, never re-normalised to a common box — the frames are different sizes and
+// different aspect ratios, and fitting each to one box would make the squirrel change size as it
+// emerges. Same reasoning as ART_UNITS_PER_PX for the props themselves.
+// Per-frame dx/dy (same fractional units) re-register a frame that doesn't share the base anchor.
+// Place these with the editor — load ?edit=anim, nudge, press C, paste the table back.
+const ANIM_DIR = 'sceneAssets/animated-assets/';
+const PROP_ANIM = {
+  tree: { mode:'emerge', x:-0.016, y:0.395, h:32, frames:[
+    { file:'triggered_treeSquirrel1.png', px:[139,187], dx:0, dy:0 },   // head and paws at the hole
+    { file:'triggered_treeSquirrel2.png', px:[198,266], dx:0, dy:0 },   // fully out, tail up
+  ]},
+  // The mouse is ONE drawing, so it rises rather than flips. It hides behind the mound and climbs
+  // over the ridge: the haystack's silhouette peaks at ny 1.0 near the centre and falls away to
+  // 0.75 at the shoulders, so sitting just off the apex gives it a high, flat lip to come over.
+  // y is where it ENDS (standing on the crown); y - travel is where it waits, fully out of sight.
+  haystack: { mode:'rise', behind:true, x:0.22, y:0.80, h:26, travel:0.18, frames:[
+    { file:'triggered_haystackMouse.png', px:[130,130], dx:0, dy:0 },   // mouse and grass tufts
+  ]},
+  // One puff at a time, stepping off the exhaust stack in four discrete beats and starting over.
+  // x/y are the pipe MOUTH, found by scanning tractor.png for the topmost ink per column: the stack
+  // shows as a spike to ny 0.890 at x-fraction 0.22-0.23, against ~0.64 for the hood either side.
+  // rise is the fraction of the sheet gained per chug, so four of them carry the puff 0.30 of the
+  // tractor's height — past its top edge and into open sky by the last one.
+  // Stink lines off the open barrel's mouth. Ordered by DENSITY, not by filename: Reek3 is the
+  // wispiest (two lines and a curl), Reek2 has four, Reek has five — so the stench thickens as you
+  // close in and holds at its worst, the way the squirrel ends fully out rather than half in.
+  // The upright barrel's rim peaks at ny 0.909, so the reek starts just inside the mouth and rises
+  // into open sky: these sheets carry a white paper backing like every other drawing here, and
+  // anywhere lower it would sit over the barrel and rub out the art underneath.
+  toxicBarrels: { mode:'emerge', x:0.195, y:0.90, h:36, frames:[
+    { file:'triggered_toxicBarrelsReek3.png', px:[104,230], dx:0, dy:0 },   // a wisp
+    { file:'triggered_toxicBarrelsReek2.png', px:[117,190], dx:0, dy:0 },   // four lines
+    { file:'triggered_toxicBarrelsReek.png',  px:[134,219], dx:0, dy:0 },   // full stink, five lines
+  ]},
+  // The only one that repaints the PROP instead of dressing it: the cellar's door swings up and
+  // the sheet grows to make room. y is 0 because the base is the one height the swap's vertical
+  // scaling cannot move — see the build loop. No h: nothing is being sized against the art here.
+  routeCellar: { mode:'swap', x:0, y:0, frames:[
+    { prop:true,                              px:[1412,576] },   // the cellar's own sheet, door shut
+    { file:'triggered_routeCellarOpen.png',   px:[1412,764] },   // door up, the hole open beneath
+  ]},
+  tractor: { mode:'chug', x:-0.272, y:0.90, h:30,
+             chugs:4, rise:0.10, period:4.0, wobble:7, frames:[
+    { file:'triggered_tractorSmoke.png', px:[340,361], dx:0, dy:0 },    // one mushroom puff, stem at its base
+  ]},
+};
+
 // Auto-crouch: if an upward ray hits a ceiling closer than CROUCH_TRIGGER,
 // shrink the ellipsoid to CROUCH_ELLIPSOID_Y (half-height when crouched).
 // CROUCH_TRIGGER should be a little larger than PLAYER_HEIGHT so the player
@@ -531,9 +631,14 @@ const PAD_MAX_BASE_Y = 80;                // skip objects whose base is above th
 // and not at the ~450 an earlier, tighter coverage bound demanded. 'lean' only tips the pivot, which
 // is both cheaper and right for anything woody or solid. 'paper' stays reserved for the props: it
 // ripples a 12×16 grid per frame, which does not scale past a handful.
-// Load the page with ?edit=1 to turn on the decoration editor. Off, none of it is registered — no
-// keys, no pointer handler, no HUD — so a visitor's build behaves exactly as if it did not exist.
-const EDIT_MODE = new URLSearchParams(location.search).has('edit');
+// Load the page with ?edit=1 to turn on the decoration editor, or ?edit=anim for the prop-animation
+// placer. Off, none of either is registered — no keys, no pointer handler, no HUD — so a visitor's
+// build behaves exactly as if it did not exist. The two are mutually exclusive: they both want the
+// C key, and neither wants the other's pointer handler stealing its clicks.
+const EDIT_MODE  = new URLSearchParams(location.search).has('edit');   // ANY editor is open
+const EDIT_WHAT  = new URLSearchParams(location.search).get('edit');
+const DECOR_EDIT = EDIT_MODE && EDIT_WHAT !== 'anim';
+const ANIM_EDIT  = EDIT_WHAT === 'anim';
 const DECOR_DIR   = 'sceneAssets/decorative-assets/';
 const DECOR_KINDS = [
   { kind:'grass', style:'bend', h:[16, 28], files:[
@@ -1829,6 +1934,142 @@ function updatePropArrows() {
   }
 }
 
+// ─── Triggered prop animations ────────────────────────────────────────────────
+// Records are built alongside the props (see the PROP_ANIM loop after SCENE_PROPS), because that
+// is where props[name] and propSize[name] both exist.
+const propAnims = [];    // { name, def, mesh, mat, texes, target, W, H, lift, local, upp, e, frame }
+let animPinned = false;  // editor only: hold every sprite fully out, whatever the distance
+let animEditSel = null;  // editor only: { pa, frame } — force one record onto a chosen frame
+
+// Standoff from the prop's face: clear air, plus the worst that face can be thrown forward by the
+// prop's own paper ripple at this height (the flap is base-anchored and grows as ny²). NEGATIVE for
+// a `behind` sprite, which hides on the far side of the sheet — same magnitude, because the ripple
+// swings both ways and the sprite has to stay clear of it either way.
+function propAnimLift(def, W) {
+  // 'chug' is alpha-BLENDED with a pinned alphaIndex (see the build loop), so its draw order does
+  // not depend on depth at all and the ripple cannot cut into it — the clearance below buys nothing.
+  // Worth skipping rather than paying: at the tractor's pipe height the derived standoff comes to
+  // ~23 units on a 209-wide prop, enough to read as parallax when you walk around it.
+  if (def.mode === 'chug') return ANIM_LIFT;
+  const d = ANIM_LIFT + PAPER_AMP * W * WIND_BASE * def.y * def.y * ANIM_WAVE_MAX;
+  return def.behind ? -d : d;
+}
+
+// Where a 'chug' is in its cycle right now, as a FRACTIONAL beat: the whole part is the beat
+// (0 … chugs-1, which sets the height) and the remainder is progress through it (which drives the
+// wobble). Measured from `chugT0`, the moment the plume woke, so every approach starts on the
+// lowest puff at the pipe rather than wherever the free-running wind clock happened to be — windT
+// never resets, so without this the first puff you saw was whichever beat you walked in on.
+// The editor holds it on a whole beat, so a parked puff sits still to be placed.
+function propAnimChugAt(pa) {
+  const n = pa.def.chugs;
+  if (animEditSel && animEditSel.pa === pa) return Math.min(n - 1, animEditSel.frame);
+  const phase = ((windT - pa.chugT0) / pa.def.period) % 1;
+  return Math.min(n - 1e-6, (phase < 0 ? phase + 1 : phase) * n);
+}
+
+// Where the sprite's base sits, in the prop's own sheet space. 'rise' walks it up out of the prop
+// across the ramp — smoothstepped, so it eases out of the hay and eases back down rather than
+// starting and stopping dead. Every other mode just parks it on its anchor.
+function propAnimBaseY(pa, f) {
+  const y = pa.def.y + (f.dy || 0);
+  if (pa.def.mode === 'chug') return (y + pa.def.rise * Math.floor(propAnimChugAt(pa))) * pa.H;
+  if (pa.def.mode !== 'rise') return y * pa.H;
+  const e = pa.e, s = e * e * (3 - 2 * e);
+  return (y - pa.def.travel * (1 - s)) * pa.H;
+}
+
+// Apply frame `i` — swap the texture and re-size the quad. Only ever called when the frame
+// actually changes, so the texture assignment is not per-frame work.
+function setPropAnimFrame(pa, i) {
+  if (i === pa.frame) return;
+  pa.frame = i;
+  const f = pa.def.frames[i];
+  pa.mat.diffuseTexture = pa.texes[i];
+  pa.mat.emissiveTexture = pa.texes[i];
+  if (pa.def.mode === 'swap') {
+    // The prop's quad was built for frame 0's art, so a taller sheet needs the mesh re-proportioned
+    // or the drawing would squash to fit. Scaling is about the mesh's local origin, which sits at
+    // its BASE on the ground — so the cellar grows upward and stays planted. The wind flap writes
+    // vertex positions and this is a transform on top of them, so the sheet still ripples.
+    const p0 = pa.def.frames[0].px;
+    pa.target.scaling.set(f.px[0] / p0[0], f.px[1] / p0[1], 1);
+    return;
+  }
+  // Each frame at its OWN pixel size times the animation's single units-per-pixel, so the frames
+  // stay in proportion to each other and the squirrel doesn't change size as it emerges.
+  pa.mesh.scaling.set(f.px[0] * pa.upp, f.px[1] * pa.upp, 1);
+  pa.mesh.position.set((pa.def.x + (f.dx || 0)) * pa.W, propAnimBaseY(pa, f), pa.lift);
+}
+
+const _paPos = new BABYLON.Vector3();
+
+function updatePropAnims(dt) {
+  // Overview mode has no player to be near, so nothing is triggered there — but the editor pins
+  // sprites out precisely so they CAN be placed from the overview camera.
+  const live = mode === 'tp' || animPinned;
+
+  for (const pa of propAnims) {
+    let target;
+    if (!live) {
+      target = 0;
+    } else if (animPinned) {
+      target = 1;
+    } else {
+      // Distance to the animation's own anchor, not the prop's ground origin: on something as
+      // tall as a tree the origin sits at the trunk's foot while the hole the squirrel lives in is
+      // most of a sheet up, and triggering off the foot would fire from the wrong place. Measured
+      // from tpCamera (the player body) rather than the trailing view camera, as the arrows are.
+      BABYLON.Vector3.TransformCoordinatesToRef(pa.local, pa.target.getWorldMatrix(), _paPos);
+      target = BABYLON.Vector3.Distance(tpCamera.position, _paPos) <= ANIM_NEAR ? 1 : 0;
+    }
+
+    // The one piece of state: ramp toward the target at one rate in both directions, so the
+    // retreat is exactly the approach reversed. Walking away rewinds the pop-out through the same
+    // frames at the same pace, and turning round mid-way just flips which way the number moves.
+    const rate = dt / ANIM_RAMP_SEC;
+    const wasAsleep = pa.e <= 0;
+    pa.e = target > pa.e ? Math.min(target, pa.e + rate) : Math.max(target, pa.e - rate);
+    // Waking up restarts the chug cycle, so the first puff of every approach is the one at the pipe.
+    if (wasAsleep && pa.e > 0) pa.chugT0 = windT;
+
+    if (pa.e <= 0) {
+      // A sprite disappears when it is not wanted; a swapped PROP obviously cannot — it just goes
+      // back to wearing its own drawing, door shut.
+      if (pa.def.mode === 'swap') setPropAnimFrame(pa, 0);
+      else if (pa.frame !== -1) { pa.mesh.setEnabled(false); pa.frame = -1; }
+      continue;
+    }
+
+    // Frames divide the ramp evenly, so two frames swap at the half-way mark — the peek is half
+    // of ANIM_RAMP_SEC, which at 2.1 is a 1.05 s look around before the squirrel commits to
+    // leaning all the way out, and the same 1.05 s back on the peek as it ducks in again.
+    const n = pa.def.frames.length;
+    // The editor pins a specific frame so you can place frame 1 against frame 2; without this the
+    // ramp would snap a pinned sprite straight to its last frame and you could never see the peek.
+    // Clamped, because for 'chug' the editor's cursor counts BEATS (up to `chugs`) while this
+    // indexes TEXTURES, of which a chug has only one — unclamped it would run off the frame list.
+    const i = (animEditSel && animEditSel.pa === pa)
+      ? Math.min(n - 1, animEditSel.frame)
+      : Math.min(n - 1, Math.floor(pa.e * n));
+    if (pa.frame === -1 && pa.def.mode !== 'swap') pa.mesh.setEnabled(true);
+    setPropAnimFrame(pa, i);
+    // 'rise' and 'chug' both move every frame, not just when the frame index changes — for those
+    // two the motion IS the animation. Nothing else about them varies: same drawing, same size,
+    // same weight, just relocated.
+    if (pa.def.mode === 'rise' || pa.def.mode === 'chug') {
+      pa.mesh.position.y = propAnimBaseY(pa, pa.def.frames[i]);
+    }
+    // A puff that only ever snaps straight up reads as mechanical, so it rocks through one full
+    // back-and-forth over the course of each beat. The quad's origin is its BASE-centre, so this
+    // pivots at the stem sitting on the pipe and swings the cloud — not the other way round.
+    if (pa.def.mode === 'chug' && pa.def.wobble) {
+      const v = propAnimChugAt(pa);
+      pa.mesh.rotation.z = pa.def.wobble * Math.PI / 180 * Math.sin((v - Math.floor(v)) * 2 * Math.PI);
+    }
+  }
+}
+
 // Wheel zoom is handled natively by Babylon's ArcRotateCameraMouseWheelInput
 // for both cameras. No manual override needed.
 
@@ -2475,7 +2716,7 @@ function addGroundPng(url, opts) {
 // Point-and-click authoring for DECOR_PLACED. Click bare ground to plant the selected art, click a
 // piece to pull it out again, [ and ] to change art, C to copy the whole table to the clipboard.
 // Works in BOTH modes on purpose: the overview to lay the island out, third person to check how a
-// piece reads at eye level. Nothing here is registered unless EDIT_MODE is on.
+// piece reads at eye level. Nothing here is registered unless DECOR_EDIT is on.
 function setupDecorEditor({ DECOR_ART, decorGroups, decorAdd, decorRebuild }) {
   const palette = Object.keys(DECOR_ART);
   let sel = 0;
@@ -2559,6 +2800,143 @@ function setupDecorEditor({ DECOR_ART, decorGroups, decorAdd, decorRebuild }) {
       }
     }
   });
+}
+
+// ─── Prop-animation placer (?edit=anim only) ──────────────────────────────────
+// Nudge a triggered sprite onto its prop by eye and copy the corrected PROP_ANIM table out. The
+// numbers in that table are read off the art to start with, which gets the squirrel near the
+// tree's knot-hole but not in it — there is no substitute for looking at it in the scene.
+//
+// Keys are constrained by what the game already owns: WASD *and* the arrow keys are both movement
+// (see FreeCameraKeyboardWalkInput's keysUp/Down/Left/Right), Space jumps, Shift sprints, Escape
+// switches mode and H toggles help. That leaves the IJKL block, which is why nudging lives there
+// rather than on the arrows where you would expect it.
+function setupPropAnimEditor() {
+  if (!propAnims.length) { console.warn('?edit=anim: no PROP_ANIM entries to place'); return; }
+  let sel = 0, frame = 0;
+
+  const hud = document.createElement('div');
+  hud.style.cssText = 'position:fixed;left:14px;bottom:14px;z-index:60;background:#2b2b2b;' +
+    'border:1px solid #454545;box-shadow:0 2px 6px rgba(0,0,0,0.4);color:#e8e8e8;' +
+    "font:13px/1.55 'Times New Roman',serif;padding:10px 14px;min-width:230px;";
+  document.body.appendChild(hud);
+
+  const cur = () => propAnims[sel];
+  // The cursor means "frame" for emerge/rise and "beat" for chug — a chug has one texture and four
+  // positions, so its steps are counted by `chugs`, and the frame it edits is always the only one.
+  const steps = (pa) => pa.def.mode === 'chug' ? pa.def.chugs : pa.def.frames.length;
+  const curFrame = (pa) => pa.def.frames[Math.min(frame, pa.def.frames.length - 1)];
+  const refreshHud = () => {
+    const pa = cur(), f = curFrame(pa), chug = pa.def.mode === 'chug';
+    hud.innerHTML =
+      '<div style="color:#f2872e;font-weight:bold;letter-spacing:.03em">PROP ANIMATION</div>' +
+      '<div style="margin:5px 0 2px">prop: <b>' + pa.name + '</b> &nbsp;·&nbsp; ' +
+      (chug ? 'beat' : 'frame') + ': <b>' + (frame + 1) + '/' + steps(pa) + '</b>' +
+      (animPinned ? ' &nbsp;·&nbsp; <b style="color:#f2872e">PINNED</b>' : '') + '</div>' +
+      '<div style="margin:0 0 7px;color:#c9c9c9;font-size:12px">x ' + pa.def.x.toFixed(3) +
+      ' &nbsp;y ' + pa.def.y.toFixed(3) +
+      (pa.def.mode === 'swap' ? '' : ' &nbsp;h ' + pa.def.h.toFixed(1)) +
+      (pa.def.mode === 'rise' ? ' &nbsp;travel ' + pa.def.travel.toFixed(3) : '') +
+      (chug ? ' &nbsp;rise ' + pa.def.rise.toFixed(3) : '') +
+      '<br>frame offset &nbsp;dx ' + (f.dx || 0).toFixed(3) + ' &nbsp;dy ' + (f.dy || 0).toFixed(3) + '</div>' +
+      '<div style="color:#9a9a9a;font-size:12px">J L&nbsp;— x &nbsp;·&nbsp; I K&nbsp;— y &nbsp;(shift ×10)<br>' +
+      'U O&nbsp;— size' +
+      (pa.def.mode === 'rise' ? ' &nbsp;·&nbsp; [ ]&nbsp;— travel' : '') +
+      (chug ? ' &nbsp;·&nbsp; [ ]&nbsp;— rise' : '') +
+      ' &nbsp;·&nbsp; N M&nbsp;— ' + (chug ? 'beat' : 'frame') + '<br>' +
+      ', .&nbsp;— prop &nbsp;·&nbsp; P&nbsp;— pin out &nbsp;·&nbsp; C&nbsp;— copy table</div>';
+  };
+
+  // Re-apply the current frame so an edit shows immediately: setPropAnimFrame is a no-op when the
+  // frame index is unchanged, so clear it first.
+  const apply = () => {
+    const pa = cur();
+    animEditSel = { pa, frame };
+    // The standoff depends on the anchor HEIGHT (the ripple grows as ny²), so moving the sprite up
+    // or down the sheet re-derives it — otherwise nudging it toward the top would sink it into the
+    // prop's face the moment the wind got up.
+    pa.lift = propAnimLift(pa.def, pa.W);
+    pa.local.set(pa.def.x * pa.W, pa.def.y * pa.H, pa.lift);   // the trigger point moves with it
+    pa.frame = -1;             // force the next tick to re-texture and re-place
+    refreshHud();
+  };
+
+  const dump = () => {
+    const body = propAnims.map(pa => {
+      const fr = pa.def.frames.map(f =>
+        '    { ' + (f.prop ? 'prop:true' : "file:'" + f.file + "'") +
+        ', px:[' + f.px[0] + ',' + f.px[1] + ']' +
+        (f.prop ? '' : ', dx:' + (+(f.dx || 0).toFixed(4)) + ', dy:' + (+(f.dy || 0).toFixed(4))) +
+        ' },').join('\n');
+      return '  ' + pa.name + ": { mode:'" + pa.def.mode + "'" +
+             (pa.def.behind ? ', behind:true' : '') +
+             ', x:' + (+pa.def.x.toFixed(4)) + ', y:' + (+pa.def.y.toFixed(4)) +
+             (pa.def.mode === 'swap' ? '' : ', h:' + (+pa.def.h.toFixed(2))) +
+             (pa.def.mode === 'rise' ? ', travel:' + (+pa.def.travel.toFixed(4)) : '') +
+             (pa.def.mode === 'chug'
+               ? ', chugs:' + pa.def.chugs + ', rise:' + (+pa.def.rise.toFixed(4)) +
+                 ', period:' + (+pa.def.period.toFixed(3)) + ', wobble:' + pa.def.wobble
+               : '') +
+             ', frames:[\n' + fr + '\n  ]},';
+    }).join('\n');
+    return 'const PROP_ANIM = {\n' + body + '\n};';
+  };
+
+  document.addEventListener('keydown', (e) => {
+    const pa = cur(), f = curFrame(pa);
+    const step = e.shiftKey ? 0.05 : 0.005;   // fractions of the prop's own sheet
+    let touched = true;
+
+    switch (e.code) {
+      // Nudge the whole animation's anchor; with a frame selected past the first, nudge THAT
+      // frame's offset instead, so a frame that doesn't register on the shared anchor can be
+      // pulled into line without dragging the others with it.
+      case 'KeyJ': if (frame) f.dx = (f.dx || 0) - step; else pa.def.x -= step; break;
+      case 'KeyL': if (frame) f.dx = (f.dx || 0) + step; else pa.def.x += step; break;
+      case 'KeyK': if (frame) f.dy = (f.dy || 0) - step; else pa.def.y -= step; break;
+      case 'KeyI': if (frame) f.dy = (f.dy || 0) + step; else pa.def.y += step; break;
+      // Size is a property of the animation, not of a frame: every frame is derived from frame 0's
+      // height at one units-per-pixel, so this rescales them together and keeps them in proportion.
+      // A 'swap' has no sprite of its own — its size comes from the art it repaints the prop with,
+      // so there is nothing here to resize.
+      case 'KeyU': if (pa.def.mode !== 'swap') { pa.def.h = Math.max(1, pa.def.h * (e.shiftKey ? 0.8 : 0.97)); pa.upp = pa.def.h / pa.def.frames[0].px[1]; } break;
+      case 'KeyO': if (pa.def.mode !== 'swap') { pa.def.h = pa.def.h * (e.shiftKey ? 1.25 : 1.03); pa.upp = pa.def.h / pa.def.frames[0].px[1]; } break;
+      // How far a 'rise' sprite climbs. Worth being able to see both ends: too little and it never
+      // clears the prop's outline, too much and it launches off the top.
+      // …and how far a 'chug' gains per beat, which is the same knob by another name.
+      case 'BracketLeft':
+        if (pa.def.mode === 'rise') pa.def.travel = Math.max(0, pa.def.travel - step);
+        else if (pa.def.mode === 'chug') pa.def.rise = Math.max(0, pa.def.rise - step);
+        break;
+      case 'BracketRight':
+        if (pa.def.mode === 'rise') pa.def.travel += step;
+        else if (pa.def.mode === 'chug') pa.def.rise += step;
+        break;
+      case 'KeyN': frame = (frame + steps(pa) - 1) % steps(pa); break;
+      case 'KeyM': frame = (frame + 1) % steps(pa); break;
+      case 'Comma':  sel = (sel + propAnims.length - 1) % propAnims.length; frame = 0; break;
+      case 'Period': sel = (sel + 1) % propAnims.length; frame = 0; break;
+      // Pin every sprite fully out, so placement can be done from the overview camera rather than
+      // by standing in exactly the right spot in third person.
+      case 'KeyP': animPinned = !animPinned; break;
+      case 'KeyC': {
+        const text = dump();
+        // Log unconditionally — a clipboard write can be refused (unfocused tab, insecure origin)
+        // and losing a placement pass to that would be maddening.
+        console.log(text);
+        if (navigator.clipboard) {
+          navigator.clipboard.writeText(text)
+            .then(() => { hud.style.borderColor = '#f2872e'; setTimeout(() => hud.style.borderColor = '#454545', 400); })
+            .catch(() => console.warn('clipboard refused — copy the table logged above instead'));
+        }
+        break;
+      }
+      default: touched = false;
+    }
+    if (touched) apply();
+  });
+
+  apply();
 }
 
 // Wind-gust streaks — hand-drawn gust lines that ride the gust front across the scene. Build a small
@@ -2990,6 +3368,113 @@ BABYLON.SceneLoader.ImportMesh('', 'https://static.wixstatic.com/3d/', '863c39_f
         height: H, aspect, style: 'paper', tilt: p.tilt, fx: p.fx,
       });
     }
+
+    // ─── Triggered prop animations ────────────────────────────────────────────────────────────
+    // One sprite quad per animated prop, PARENTED TO THE PROP MESH. Parenting is the whole trick:
+    // the prop's tilt, its wind lean and its wake-lift all carry the sprite along through the
+    // parent's world matrix, so nothing here has to track the prop per frame. The arrows get their
+    // anchors onto a moving prop the same way (a.target.getWorldMatrix() in updatePropArrows).
+    //
+    // Every frame's texture is built NOW rather than on first sight — the arrows load eagerly for
+    // the same reason, and for the same effect: a lazy load would stall the pop the one time it
+    // matters. Two 30-50 KB PNGs against art files a hundred times that size.
+    for (const name in PROP_ANIM) {
+      const def = PROP_ANIM[name], target = props[name], size = propSize[name];
+      if (!target || !size) { console.warn('PROP_ANIM references unknown prop:', name); continue; }
+
+      // `prop: true` on a frame means "the sheet the prop already has" — reuse that texture rather
+      // than loading a second copy of art the scene has loaded once already.
+      const texes = def.frames.map(f => {
+        if (f.prop) return target.material.diffuseTexture;
+        const t = new BABYLON.Texture(ANIM_DIR + f.file, scene, false, true, undefined, null,
+          () => console.warn('prop animation PNG failed to load:', f.file));
+        t.hasAlpha = true;
+        return t;
+      });
+
+      // 'swap' repaints the PROP ITSELF rather than hanging a sprite on it, so there is no quad to
+      // build, no material to make and no standoff to derive: it borrows the prop's own mesh and
+      // material and just changes which sheet they wear. The cellar's two drawings are registered
+      // for this — same width, same ink columns, same 54 px from canvas bottom to the lowest
+      // stroke, the open one simply 188 px taller because the raised door needs headroom. So the
+      // ground line, the grass and the little structure to the right all stay put and only the
+      // door moves. Anchoring the trigger at the BASE (y = 0) matters: the mesh's verts run Y 0..H
+      // from its origin, so the door-swap's vertical scaling pivots there and leaves that one
+      // height untouched — anywhere else the anchor would rise as the door opened, changing the
+      // very distance that decides whether it should be open, which can chatter at the threshold.
+      if (def.mode === 'swap') {
+        propAnims.push({
+          name, def, mesh: target, mat: target.material, texes, target,
+          W: size.W, H: size.H,
+          local: new BABYLON.Vector3(def.x * size.W, def.y * size.H, 0),
+          lift: 0, upp: 0, e: 0, chugT0: 0, frame: -1,
+        });
+        continue;
+      }
+
+      // Same material recipe as the props themselves (flat, self-lit paper) with ONE change:
+      // alpha TEST rather than alpha blend. Blended geometry writes no depth and is ordered only
+      // by sorting whole meshes on distanceToCamera, which is measured to the mesh's bounding
+      // centre — so a squirrel a few units off a 383-unit tree would sort against the middle of
+      // the TREE and could flip behind the trunk depending on the angle you walk in from. Alpha
+      // testing puts the sprite in the opaque pass where the depth buffer resolves it per pixel
+      // and sort order stops mattering. It is the same fix, for the same reason, as the
+      // decorations below. Hard-edged line art takes the cutout well, and a hard two-frame
+      // flipbook wants no fade anyway.
+      const mat = new BABYLON.StandardMaterial('propAnimMat_' + name, scene);
+      mat.diffuseTexture = texes[0]; mat.useAlphaFromDiffuseTexture = true;
+      mat.emissiveTexture = texes[0]; mat.emissiveColor = new BABYLON.Color3(0.7, 0.7, 0.7);
+      mat.specularColor = new BABYLON.Color3(0, 0, 0);
+      mat.backFaceCulling = false;
+      if (def.mode === 'chug') {
+        // The puff is fully opaque like everything else — this is a DRAW-ORDER choice, not a
+        // transparency effect. Alpha testing resolves a sprite against its prop with the depth
+        // buffer, which is what the squirrel needs, but it costs a standoff wide enough to clear
+        // the prop's paper ripple: at the tractor's pipe height that is ~23 units on a 209-wide
+        // sheet, and the puff visibly swims in front of the tractor as you walk around it.
+        // Blending with a pinned alphaIndex instead means the puff simply always draws after the
+        // tractor, whatever the ripple does, so it can sit 3 units off the face. It also spends
+        // three of its four beats above the tractor's outline against open sky, where there is
+        // nothing to sort against at all.
+        mat.transparencyMode = BABYLON.Material.MATERIAL_ALPHABLEND;
+        mat.alphaIndex = 500;
+      } else {
+        mat.transparencyMode = BABYLON.Material.MATERIAL_ALPHATEST;
+        mat.alphaCutOff = ANIM_ALPHA_CUTOFF;
+      }
+
+      // A unit quad — X -0.5..0.5, Y 0..1 — so scaling sets the frame's size and plants its
+      // BASE-CENTRE on the anchor point, which is the registration the table's x/y describe.
+      const mesh = buildVerticalPlane('propAnim_' + name, 1, 1, 1, 1);
+      mesh.material = mat;
+      mesh.parent = target;                    // inherit the prop's tilt, lean and lift
+      mesh.isPickable = false;                 // never steal the prop's own click
+      mesh.checkCollisions = false;            // and never block the player
+      mesh.receiveShadows = true;              // but not a CASTER: transparencyShadow is costly
+      mesh.setEnabled(false);
+      excludedCamMeshes.add(mesh);             // the camera ray ignores it — no zoom-in on a squirrel
+
+      const lift = propAnimLift(def, size.W);
+
+      propAnims.push({
+        name, def, mesh, mat, texes, target,
+        W: size.W, H: size.H,
+        // The point the proximity test measures to, in the prop's OWN sheet space — the knot-hole
+        // rather than the trunk's foot, which on a 383-unit tree is 167 units lower and would trip
+        // the animation from the wrong place. Transformed by the prop's world matrix each frame, so
+        // the prop's tilt, lean and wake-lift carry it — the same thing arrows do with a.local.
+        // Deliberately the animation's BASE anchor and not the current frame's: a per-frame dx/dy
+        // nudge is a registration fix, and should not move where the trigger fires from.
+        local: new BABYLON.Vector3(def.x * size.W, def.y * size.H, lift),
+        lift,
+        upp: def.h / def.frames[0].px[1],      // ONE units-per-pixel for the whole animation (sprites only)
+        e: 0,                                  // emergence, 0..1 — the only state there is
+        chugT0: 0,                             // 'chug' only: windT when the cycle last restarted
+        frame: -1,                             // last frame applied, so we only re-texture on change
+      });
+    }
+    if (ANIM_EDIT) setupPropAnimEditor();
+
     // ─── Decorations ──────────────────────────────────────────────────────────────────────────
     // ONE mesh per art file; every piece of that art is a THIN INSTANCE of it. Twelve meshes, twelve
     // draw calls, for however many hundred pieces are placed.
@@ -3053,8 +3538,8 @@ BABYLON.SceneLoader.ImportMesh('', 'https://static.wixstatic.com/3d/', '863c39_f
       mesh.material = mat;
       mesh.receiveShadows = true;        // but never a shadow CASTER: transparencyShadow is costly
       mesh.checkCollisions = false;      // walk straight through scenery
-      mesh.isPickable = EDIT_MODE;       // only the editor ever needs to hit one
-      mesh.thinInstanceEnablePicking = EDIT_MODE;
+      mesh.isPickable = DECOR_EDIT;       // only the decoration editor ever needs to hit one
+      mesh.thinInstanceEnablePicking = DECOR_EDIT;
       excludedCamMeshes.add(mesh);       // the camera ray ignores decoration
       g = { key, art, mesh, recs: [], ys: [], mats: null };
       decorGroups.set(key, g);
@@ -3147,7 +3632,7 @@ BABYLON.SceneLoader.ImportMesh('', 'https://static.wixstatic.com/3d/', '863c39_f
     console.log('decorations:', DECOR_PLACED.length, 'pieces in', decorGroups.size,
                 'draw calls' + (EDIT_MODE ? ' — editor ON' : ''));
 
-    if (EDIT_MODE) setupDecorEditor({ DECOR_ART, decorGroups, decorAdd, decorRebuild });
+    if (DECOR_EDIT) setupDecorEditor({ DECOR_ART, decorGroups, decorAdd, decorRebuild });
 
     const barnProp = props.barn;
     // ─── Prop links ───────────────────────────────────────────────────────────────────────────
@@ -3600,6 +4085,7 @@ function updatePerfHud(now) {
     'player   ' + _jt.player.toFixed(1) + ' ms\n' +
     'sway     ' + _jt.sway.toFixed(1) + ' ms\n' +
     'decor    ' + _jt.decor.toFixed(1) + ' ms\n' +
+    'anims    ' + _jt.anims.toFixed(1) + ' ms\n' +
     'arrows   ' + _jt.arrows.toFixed(1) + ' ms\n' +
     'hover    ' + _jt.hover.toFixed(1) + ' ms\n' +
     'stars    ' + _jt.stars.toFixed(1) + ' ms\n' +
@@ -3609,7 +4095,7 @@ function updatePerfHud(now) {
 // Per-section timings for our OWN render-loop work, which Babylon's counters cannot see. The
 // subsystem breakdown accounted for only 5.6 ms of 23 ms, so the rest is in here somewhere; six
 // performance.now() calls a frame is nothing next to knowing which line it is.
-const _jt = { player: 0, sway: 0, decor: 0, arrows: 0, hover: 0, stars: 0 };
+const _jt = { player: 0, sway: 0, decor: 0, anims: 0, arrows: 0, hover: 0, stars: 0 };
 
 // ─── Render loop ──────────────────────────────────────────────────────────────
 engine.runRenderLoop(() => {
@@ -3869,8 +4355,12 @@ engine.runRenderLoop(() => {
   _jt.decor = performance.now() - _t2;
   const _t3 = performance.now();
 
+  updatePropAnims(dt);  // squirrel out of the tree &c — same ordering reason as the arrows below
+  _jt.anims = performance.now() - _t3;
+  const _t3b = performance.now();
+
   updatePropArrows();  // aim the pop-up arrows (after the wp loop above: it moves the props they track)
-  _jt.arrows = performance.now() - _t3;
+  _jt.arrows = performance.now() - _t3b;
   const _t4 = performance.now();
 
   updateHoverCursor(); // …and show the pointing hand if the mouse is resting on something live
