@@ -2403,7 +2403,7 @@ function buildPhotoGrid(key) {
     im.decoding = 'async';    // keep decode off the main thread — the scene is still rendering behind
     im.addEventListener('click', (e) => {                 // a photo follows its link, never closes
       e.stopPropagation();
-      if (p.url) window.location.href = p.url;
+      if (p.url) window.open(p.url, '_blank');
     });
     PHOTO_GRID_EL.appendChild(im);
     photoImgs.push(im);
