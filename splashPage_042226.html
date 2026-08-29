@@ -481,9 +481,10 @@ A place to play, archive, remember, and repair.
 
 `;
 
+const GAME_URL = 'https://siennabroglie.wixsite.com/my-site-1/game';
 const linkLines = [
-  { text: 'WELCOME TO THE MIND BARN.', url: 'YOUR_URL_HERE' },
-  { text: "DON'T FORGET TO CHECK THE ATTIC.", url: 'YOUR_URL_HERE' }
+  { text: 'WELCOME TO THE MIND BARN.', url: GAME_URL },
+  { text: "DON'T FORGET TO CHECK THE ATTIC.", url: GAME_URL }
 ];
 
 const fullText = bodyText;
@@ -506,6 +507,7 @@ function appendLinkLines(container) {
     a.textContent = l.text;
     a.href        = l.url;
     a.target      = '_blank';
+    a.rel         = 'noopener noreferrer';   // _blank otherwise hands the opened page window.opener
     wrapper.appendChild(a);
     if (i < linkLines.length - 1) wrapper.appendChild(document.createTextNode(' '));
   });
