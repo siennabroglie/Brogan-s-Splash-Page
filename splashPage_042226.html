@@ -506,8 +506,6 @@ function appendLinkLines(container) {
     a.className   = 'link-line';
     a.textContent = l.text;
     a.href        = l.url;
-    a.target      = '_blank';
-    a.rel         = 'noopener noreferrer';   // _blank otherwise hands the opened page window.opener
     wrapper.appendChild(a);
     if (i < linkLines.length - 1) wrapper.appendChild(document.createTextNode(' '));
   });

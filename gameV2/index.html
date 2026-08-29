@@ -346,10 +346,8 @@ const FLY_PNGS = [
   { url: 'sceneAssets/animated-assets/flying_orien.png',     vh: [26, 40], pos: [0.84, 1.00] },  // low
   { url: 'sceneAssets/animated-assets/flying_egg.png',       vh: [10, 18], pos: [0.00, 1.00],    // anywhere
     // Straight out to the one video, not the Just Borg photo grid — the grid was too heavy to load
-    // for what is a glancing click on something drifting past. newTab so the farm is still there
-    // behind them: the egg is a curiosity, not an exit.
-    link: { url: 'https://www.youtube.com/watch?v=ZOJzkTGJ3K0&list=PLf2smdNBnoCoRBV_pOlq9-6lacaXh_qiB&index=18',
-            newTab: true } },
+    // for what is a glancing click on something drifting past.
+    link: { url: 'https://www.youtube.com/watch?v=ZOJzkTGJ3K0&list=PLf2smdNBnoCoRBV_pOlq9-6lacaXh_qiB&index=18' } },
 ];
 // Percent inset on each edge of a linked flyover's hot-spot — the transparent div that takes the
 // click, laid over the middle of the art. Not cosmetic caution: the egg's file is 1135×481, so at
@@ -2405,7 +2403,7 @@ function buildPhotoGrid(key) {
     im.decoding = 'async';    // keep decode off the main thread — the scene is still rendering behind
     im.addEventListener('click', (e) => {                 // a photo follows its link, never closes
       e.stopPropagation();
-      if (p.url) window.open(p.url, '_blank');
+      if (p.url) window.location.href = p.url;
     });
     PHOTO_GRID_EL.appendChild(im);
     photoImgs.push(im);
@@ -3617,9 +3615,7 @@ BABYLON.SceneLoader.ImportMesh('', 'https://static.wixstatic.com/3d/', '863c39_f
     const PROP_ACTIONS = {
       boat:         { popup: 'Vote Mail Is Easy' },
       haystack:     { popup: 'Nonprofits' },
-      // newTab, following the flyover egg: the farm is still there behind them, and a cellar is
-      // a place you look into rather than a way out of the island.
-      routeCellar:  { url: 'https://siennabroglie.wixsite.com/my-site-1/works-in-progress', newTab: true },
+      routeCellar:  { url: 'https://siennabroglie.wixsite.com/my-site-1/works-in-progress' },
       toxicBarrels: { popup: 'Stay Home Safe Secure' },
       tractor:      { popup: 'Orange Man Adventure Theatre' },
       tree:         { popup: 'Mom My Straightman' },

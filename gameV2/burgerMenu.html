@@ -146,18 +146,15 @@
          tomato, cheese, patty, lettuce. The id keeps the INGREDIENT's name rather than the menu
          item's, because layers is what pairs the two and the wording is expected to keep changing.
 
-         target="_blank" is not decoration here: this document is loaded in an iframe, so an
-         untargeted link would navigate the IFRAME and load the destination inside the little menu
-         box instead of the page. _blank also keeps the farm alive behind them, matching every other
-         outbound link in the game. rel goes with _blank so the opened page gets no window.opener.
-         (Use _top instead if a menu item should ever replace the game rather than open beside it.) -->
-    <a class="ing-label" id="label-tomato"  target="_blank" rel="noopener noreferrer"
+         _top, not a bare href: this document is loaded in an iframe, so an untargeted link
+         navigates the IFRAME and loads the destination inside the little menu box. -->
+    <a class="ing-label" id="label-tomato"  target="_top"
        href="https://siennabroglie.wixsite.com/my-site-1/about">About</a>
-    <a class="ing-label" id="label-cheese"  target="_blank" rel="noopener noreferrer"
+    <a class="ing-label" id="label-cheese"  target="_top"
        href="https://siennabroglie.wixsite.com/my-site-1">Manifesto</a>
-    <a class="ing-label" id="label-patty"   target="_blank" rel="noopener noreferrer"
+    <a class="ing-label" id="label-patty"   target="_top"
        href="https://www.youtube.com/@borg22222/playlists">Highlights</a>
-    <a class="ing-label" id="label-lettuce" target="_blank" rel="noopener noreferrer"
+    <a class="ing-label" id="label-lettuce" target="_top"
        href="https://siennabroglie.wixsite.com/my-site-1/works-in-progress">Works in Progress</a>
 
   </div>
