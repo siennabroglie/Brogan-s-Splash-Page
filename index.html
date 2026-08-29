@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The Farm</title>
+<!-- The repo root had no entry point, so the bare Pages URL 404'd and only the one-level-down
+     link worked. This sends the root to the game.
+
+     The path is RELATIVE on purpose. This is a GitHub Pages *project* site, served from
+     /Mind-Barn-Site/, so a leading slash would resolve to siennabroglie.github.io/gameV2/... and
+     miss the repo prefix entirely. Relative works both there and off a plain local file server.
+
+     Belt and braces: the meta refresh covers the no-JS case, the script covers browsers that treat
+     a refresh as a soft navigation, and the visible link covers both failing. replace() rather than
+     assignment so this page leaves no history entry — otherwise Back from the game lands here and
+     bounces straight forward again. -->
+<meta http-equiv="refresh" content="0; url=gameV2/index.html">
+<link rel="canonical" href="gameV2/index.html">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Caveat:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 100%; height: 100%;
+    background: #f4f4f4; color: #141414;
+    font-family: 'Times New Roman', Times, serif;
+    display: flex; align-items: center; justify-content: center;
+  }
+  /* Styled at all only because a slow connection can show it for a beat, and a bare white flash
+     with a raw link reads as a broken page rather than a doorway. Matches the site's chrome:
+     flat grey box, 1pt lighter border, slight drop shadow, Caveat heading, orange as highlight. */
+  .card {
+    background: #ededed; border: 1px solid #e6e6e6;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.28);
+    padding: 26px 40px 30px; text-align: center;
+  }
+  h1 {
+    font-family: 'Caveat', cursive; font-weight: 700; font-size: 40px; line-height: 1.05;
+    color: #fff; background: #f2872e; display: inline-block;
+    padding: 2px 22px 4px; margin-bottom: 14px;
+  }
+  p { font-size: 18px; color: rgba(20,20,20,0.68); }
+  a { color: #f2872e; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <h1>The Farm</h1>
+    <p>Opening the barn&hellip; <a href="gameV2/index.html">go there now</a></p>
+  </div>
+  <script>location.replace('gameV2/index.html');</script>
+</body>
+</html>
