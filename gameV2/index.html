@@ -2464,8 +2464,34 @@ const PHOTO_FLOAT_RAMP  = 3500;   // ms to ease the motion in (cubic) so it star
 const photoImgs  = [];            // the <img> elements of the currently-shown collection
 const photoFloat = { raf: 0, timer: 0, items: [], last: 0, elapsed: 0 };
 
-// Film (anywhere but a photo) closes — wired once.
-if (PHOTO_POPUP_EL) PHOTO_POPUP_EL.addEventListener('click', closePhotoPopup);
+// ── The opening tap's ghost click ────────────────────────────────────────────
+// A prop tap arrives as POINTERTAP, which Babylon fires on pointerUP, so the popup is on screen
+// while the browser is still finishing that gesture — and the `click` it then sends for the same
+// tap hit-tests against a screen that now has a full-screen overlay on it. On a phone that landed
+// on a photo and jumped straight to YouTube. The images carry intrinsic width/height, so they fill
+// their cells the instant the popup opens even with nothing downloaded: there is a real target
+// there long before there is a visible picture.
+//
+// So the popup ignores clicks for a moment after opening. Keyed off the POINTER TYPE rather than
+// IS_MOBILE: a mouse cannot produce this click at all and should wait exactly zero, while a
+// touchscreen laptop — which the UA sniff calls desktop — needs the delay as much as a phone. It
+// also covers opening the popup from a menu link rather than a prop.
+//
+// PHOTO_FLOAT_DELAY is deliberately NOT reused for this. They answer different questions, and
+// sharing one number would mean retuning the float animation silently changed how long clicks
+// are dead.
+const PHOTO_CLICK_ARM_DELAY = 1000;   // ms of dead clicks after a touch opens the popup
+let photoClickArmedAt = 0;
+let lastPointerType   = 'mouse';
+document.addEventListener('pointerdown', (e) => { lastPointerType = e.pointerType || 'mouse'; }, true);
+const photoClicksArmed = () => performance.now() >= photoClickArmedAt;
+
+// Film (anywhere but a photo) closes — wired once. Guarded too: fixing only the photos would just
+// change the symptom, the same stray click landing on the film to flash the popup open and shut.
+if (PHOTO_POPUP_EL) PHOTO_POPUP_EL.addEventListener('click', (e) => {
+  if (!photoClicksArmed()) { e.stopPropagation(); e.preventDefault(); return; }
+  closePhotoPopup();
+});
 
 // Build the grid for one folder's collection. Rebuilt on each open so any folder can show.
 function buildPhotoGrid(key) {
@@ -2486,7 +2512,8 @@ function buildPhotoGrid(key) {
     im.loading = 'lazy';      // a tall collection leaves its offscreen rows until they're scrolled to
     im.decoding = 'async';    // keep decode off the main thread — the scene is still rendering behind
     im.addEventListener('click', (e) => {                 // a photo follows its link, never closes
-      e.stopPropagation();
+      e.stopPropagation();                                // ...so an ignored click cannot close it either
+      if (!photoClicksArmed()) { e.preventDefault(); return; }
       if (p.url) window.open(p.url, '_blank');
     });
     PHOTO_GRID_EL.appendChild(im);
@@ -2505,6 +2532,8 @@ function openPhotoPopup(key) {
   const w = tpCamera.inputs.attached && tpCamera.inputs.attached.keyboard;
   if (w && w._keys) w._keys.length = 0;
   canvas.blur();
+  // Deaden clicks briefly, so the tap that opened this cannot also act inside it.
+  photoClickArmedAt = performance.now() + (lastPointerType === 'mouse' ? 0 : PHOTO_CLICK_ARM_DELAY);
   photoFloat.timer = setTimeout(releasePhotoFloat, PHOTO_FLOAT_DELAY);  // grid holds, then the motion eases in
 }
 
