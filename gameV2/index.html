@@ -73,9 +73,21 @@
     box-shadow: var(--box-shadow);
     padding: 9px 30px; font-family: var(--script); font-size: 25px; font-weight: 600;
     cursor: pointer; pointer-events: all; letter-spacing: 0.01em;
+    white-space: nowrap;             /* "third person" is a label, not a paragraph — never break it */
     transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
   }
-  .btn:hover { background: var(--orange); border-color: var(--orange); color: #fff; }
+  /* Orange is the PRESSED state, and on a real pointer the hover state too. Splitting them matters
+     on touch: a tap latches :hover until you touch something else, so a single hover rule left the
+     button stuck orange after its first press. hover:hover keeps that to devices that really do
+     hover — it is the whole test, so no pointer:fine clause to also go wrong on a stylus or a TV. */
+  @media (hover: hover) {
+    .btn:hover { background: var(--orange); border-color: var(--orange); color: #fff; }
+  }
+  .btn:active { background: var(--orange); border-color: var(--orange); color: #fff; }
+  /* Phone sizing — the desktop button is set for a desktop frame and eats a phone's width. Driven
+     off IS_MOBILE (the same UA sniff as the touch arrows) rather than a max-width query, which
+     would also shrink it in a narrow desktop window where the full size is still wanted. */
+  body.mobile .btn { padding: 5px 16px; font-size: 19px; }
 
   /* Mobile third-person touch arrows — hand-drawn white glyphs fanned above the
      overview button. Forward (up) + turn left/right; jump is a double-tap on the
@@ -288,6 +300,10 @@ window.addEventListener('message', (e) => {
 const IS_MOBILE =
   /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
   (navigator.maxTouchPoints > 1 && /Macintosh/i.test(navigator.userAgent));
+
+// Mirrored onto <body> so the stylesheet can size chrome for a phone off the same one sniff,
+// instead of a second, drifting definition of "mobile" in a media query.
+if (IS_MOBILE) document.body.classList.add('mobile');
 
 // ─── Tuning ───────────────────────────────────────────────────────────────────
 const PLAYER_HEIGHT  = 68;            // 75 reduced 10% — fits barn staircase clearances
