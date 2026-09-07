@@ -90,11 +90,16 @@
   body.mobile .btn { padding: 5px 16px; font-size: 19px; }
 
   /* Mobile third-person touch arrows — hand-drawn white glyphs fanned above the
-     overview button. Forward (up) + turn left/right; jump is a double-tap on the
-     scene. Hidden by default; shown only on mobile in third-person (via JS).      */
+     overview button. A two-headed vertical arrow (forward / back) flanked by turn
+     left/right; jump is a double-tap on the scene. Hidden by default; shown only on
+     mobile in third-person (via JS).
+     The box grew UPWARD to fit the second head: it is anchored to its bottom, and
+     below it there is only the 12px gap to the overview button, so there was no room
+     to grow the other way. The side arrows were pushed down by the same amount to
+     hold their old position on screen.                                            */
   #touchControls {
     position: absolute; bottom: 72px; left: 50%; transform: translateX(-50%);
-    width: 240px; height: 124px; z-index: 11;
+    width: 240px; height: 136px; z-index: 11;
     pointer-events: none;          /* container ignores taps; arrows re-enable */
     display: none;
   }
@@ -114,9 +119,47 @@
     filter: drop-shadow(0 1px 3px rgba(0,0,0,0.65));   /* legible over the white barn */
   }
   .tarrow.active { transform: scale(0.85); opacity: 1; }
-  #arrowUp    { top: 24px; left: 83px; }   /* stem bottom aligns with the side-arrow stems */
-  #arrowLeft  { top: 50px; left: 16px; }   /* lower-left */
-  #arrowRight { top: 50px; left: 150px; }  /* lower-right */
+  /* Pushed 15px further out each — one arrowhead's depth — so the turn arrows no longer
+     crowd the vertical one. They used to butt straight up against the .thit halves (ending
+     at x=90 and resuming at x=150); now there is a 15px breathing gap on either side. Still
+     inside the 240px box, so nothing else has to move.                                     */
+  #arrowLeft  { top: 62px; left: 1px; }    /* lower-left  — 62+74 = 136, flush to the box bottom */
+  #arrowRight { top: 62px; left: 165px; }  /* lower-right — 165+74 = 239, 1px inside the box */
+
+  /* The forward/back arrow is ONE drawn glyph with TWO touch targets, not two glyphs:
+     a single unbroken arm reads as one control, and scaling half of it on press (what
+     .tarrow.active does to the side arrows) would visibly tear that arm in two. So the
+     glyph is inert and .thit carries the touch, and the press shows as the pressed
+     HEAD thickening — feedback that says which end took the press without moving it. */
+  #arrowVert {
+    position: absolute; top: 4px; left: 83px; width: 74px; height: 128px;
+    pointer-events: none; opacity: 0.95;
+  }
+  /* The shadow lives on the SVG, not on the paths — the arm and the two heads are separate
+     path elements here (they have to be, so a head can thicken on its own), and a per-path
+     filter made each head cast a shadow ONTO the arm it sits over. Filtering the whole glyph
+     once shadows the union of the strokes instead, so the arrow only shadows the scene. The
+     side arrows keep their per-path filter safely: each is a single path whose arm and head
+     are subpaths of one `d`, so there is nothing for it to self-shadow. */
+  #arrowVert svg {
+    width: 100%; height: 100%; display: block;
+    filter: drop-shadow(0 1px 3px rgba(0,0,0,0.65));   /* legible over the white barn */
+  }
+  #arrowVert path {
+    fill: none; stroke: #fff; stroke-width: 5;
+    stroke-linecap: round; stroke-linejoin: round;
+    transition: stroke-width 0.08s ease;
+  }
+  #arrowVert path.pressed { stroke-width: 9; }
+  /* Narrower than the glyph so the halves cannot overlap the side arrows' 74px boxes
+     (which end at x=90 and start at x=150) and steal their taps. */
+  .thit {
+    position: absolute; left: 90px; width: 60px; height: 68px;
+    pointer-events: auto; touch-action: none; cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  #arrowUp   { top: 0; }
+  #arrowDown { top: 68px; }
 
   #loading {
     position: absolute; inset: 0; background: #000;
@@ -250,13 +293,18 @@
     <div class="row"><span>Look</span><span><kbd>drag</kbd></span></div>
   </div>
 </div>
-<!-- Mobile third-person movement arrows (forward / turn left / turn right). Jump = double-tap. -->
+<!-- Mobile third-person movement arrows (forward / back / turn left / turn right). Jump = double-tap.
+     The vertical arrow is drawn once (#arrowVert, inert) and hit-tested twice (.thit halves). -->
 <div id="touchControls">
-  <div class="tarrow" id="arrowUp" aria-label="forward">
-    <svg viewBox="0 0 80 80">
-      <path d="M40,68 Q41,42 40,17 M24,33 Q33,22 40,17 Q47,22 56,33"/>
+  <div id="arrowVert" aria-hidden="true">
+    <svg viewBox="0 0 80 138">
+      <path d="M40,124 Q41,69 40,14"/>
+      <path id="vertHeadUp"   d="M24,30 Q33,19 40,14 Q47,19 56,30"/>
+      <path id="vertHeadDown" d="M24,108 Q33,119 40,124 Q47,119 56,108"/>
     </svg>
   </div>
+  <div class="thit" id="arrowUp"   aria-label="forward"></div>
+  <div class="thit" id="arrowDown" aria-label="backward"></div>
   <div class="tarrow" id="arrowLeft" aria-label="turn left">
     <svg viewBox="0 0 80 80">
       <path d="M68,40 Q42,41 17,40 M33,24 Q22,33 17,40 Q22,47 33,56"/>
@@ -3840,8 +3888,13 @@ if (IS_MOBILE) {
   // turning is handled by FreeCameraKeyboardWalkInput, which tracks keyCodes in its
   // own _keys array, not the `keys` object. Synthetic key events can't reliably carry
   // keyCode, so we poke that array directly.
+  // `head` is the path to thicken while held — only the two-headed vertical arrow has
+  // one, since the side arrows show their press by scaling the whole glyph instead.
+  // 40 is ArrowDown, already in the walk input's keysDown ([40, 83]), so backward needs
+  // no movement code of its own: it is the same path the S key has always driven.
   const ARROW_KEYS = {
-    arrowUp:    { code: 'ArrowUp',    kc: 38 },
+    arrowUp:    { code: 'ArrowUp',    kc: 38, head: 'vertHeadUp'   },
+    arrowDown:  { code: 'ArrowDown',  kc: 40, head: 'vertHeadDown' },
     arrowLeft:  { code: 'ArrowLeft',  kc: 37 },
     arrowRight: { code: 'ArrowRight', kc: 39 },
   };
@@ -3850,12 +3903,14 @@ if (IS_MOBILE) {
     const el = document.getElementById(id);
     if (!el) return;
     const code = ARROW_KEYS[id].code, kc = ARROW_KEYS[id].kc;
+    const head = ARROW_KEYS[id].head ? document.getElementById(ARROW_KEYS[id].head) : null;
     const press = (e) => {
       e.preventDefault();
       keys[code] = true;
       const w = walkInput();
       if (w && w._keys.indexOf(kc) === -1) w._keys.push(kc);
       el.classList.add('active');
+      if (head) head.classList.add('pressed');
       if (e.pointerId != null && el.setPointerCapture) { try { el.setPointerCapture(e.pointerId); } catch (_) {} }
     };
     const release = () => {
@@ -3863,6 +3918,7 @@ if (IS_MOBILE) {
       const w = walkInput();
       if (w) { const i = w._keys.indexOf(kc); if (i >= 0) w._keys.splice(i, 1); }
       el.classList.remove('active');
+      if (head) head.classList.remove('pressed');
     };
     el.addEventListener('pointerdown',  press);
     el.addEventListener('pointerup',    release);
