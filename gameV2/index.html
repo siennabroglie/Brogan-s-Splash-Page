@@ -312,6 +312,9 @@ const WALK_SPEED     = 9.0;           // island is large; 3.6 read as a trudge c
                                       // default pace, with shift left as a smaller boost on top
 const GRAVITY_PER_FRAME = 4.0;
 const TURN_SMOOTH    = 0.2;
+const TP_TURN_SPEED  = 0.03;          // third-person turn, radians per 60fps frame
+const MOBILE_TURN_MULT = 0.25;        // was 0.5 (0.015) and still overshot: the arrows are a binary
+const MOBILE_WALK_MULT = 0.5;         // press with no analogue fine control, and the screen is small
 const CAMERA_DISTANCE = 80;
 const CAMERA_HEIGHT  = 90;
 const WIND_SPEED     = 0.012;
@@ -1002,6 +1005,20 @@ const NO_DECOR  = _flags.has('nodecor');
 (async () => {  // async IIFE — required so we can await HavokPhysics()
 
 const scene = new BABYLON.Scene(engine);
+
+// One frame's worth of movement. On MOBILE this is normalized to 60fps, so a 120Hz phone covers the
+// same ground per SECOND as a 60Hz one instead of twice as much — the arrows are the only input
+// there, and refresh rates across phones vary far too widely to tune a fixed step against.
+// getAnimationRatio is Babylon's own delta/16.7ms; the clamp is the same guard as the wind loop's,
+// so a stall (backgrounded tab, slow asset decode) arrives as a big step rather than a teleport.
+//
+// Desktop deliberately stays at a FIXED step per frame. It renders below 60fps, so normalizing it
+// both sped it up (every frame advancing further than the tuned step) and made it stutter (the step
+// now resizing with each frame's time, where a uniform step reads as smooth even when the wall-clock
+// pace drifts). Turning showed it worst, being a direct rotation.y add. The frame-rate dependence
+// that leaves on desktop is the long-standing behaviour everything was tuned against, not an
+// oversight — a 120Hz monitor really does move twice as far per second, and that is accepted.
+const frameScale = () => (IS_MOBILE ? Math.min(2.5, scene.getAnimationRatio()) : 1);
 // Night sky — black backdrop behind the procedural star dome (see "Star dome" section below).
 // Alpha 0, not 1: open sky is a HOLE in the canvas, so #fly-overlay (which sits behind it) shows
 // through there and is covered anywhere a mesh draws. html/body is #000, so the sky still reads as
@@ -1129,9 +1146,9 @@ const tpCamera = new BABYLON.UniversalCamera('tpCam', new BABYLON.Vector3(0, 0, 
 tpCamera.minZ = 4;
 tpCamera.maxZ = 12000;
 tpCamera.speed = WALK_SPEED;
-tpCamera.angularSpeed = 0.03;
+tpCamera.angularSpeed = TP_TURN_SPEED;
 // Mobile turns only via the on-screen arrows — slow the turn so it isn't abrupt.
-if (IS_MOBILE) tpCamera.angularSpeed = 0.015;
+if (IS_MOBILE) tpCamera.angularSpeed = TP_TURN_SPEED * MOBILE_TURN_MULT;
 tpCamera.angle = Math.PI;   // face toward scene (set before direction)
 tpCamera.direction = new BABYLON.Vector3(Math.cos(tpCamera.angle), 0, Math.sin(tpCamera.angle));
 tpCamera.ellipsoid = new BABYLON.Vector3(12, PLAYER_HEIGHT / 2, 12);
@@ -1650,12 +1667,14 @@ FreeCameraKeyboardWalkInput.prototype.detachControl = function () {
 FreeCameraKeyboardWalkInput.prototype.checkInputs = function () {
   if (this._onKeyDown) {
     var camera = this.camera;
+    var k = frameScale();          // one frame's worth, so speed is per-second not per-frame
     for (var index = 0; index < this._keys.length; index++) {
       var keyCode = this._keys[index];
-      var speed = camera.speed;
-      if      (this.keysLeft.indexOf(keyCode)  !== -1) { camera.rotation.y -= camera.angularSpeed; camera.direction.copyFromFloats(0,0,0); }
+      var speed = camera.speed * k;
+      var turn  = camera.angularSpeed * k;
+      if      (this.keysLeft.indexOf(keyCode)  !== -1) { camera.rotation.y -= turn; camera.direction.copyFromFloats(0,0,0); }
       else if (this.keysUp.indexOf(keyCode)    !== -1) { camera.direction.copyFromFloats(0, 0, speed); }
-      else if (this.keysRight.indexOf(keyCode) !== -1) { camera.rotation.y += camera.angularSpeed; camera.direction.copyFromFloats(0,0,0); }
+      else if (this.keysRight.indexOf(keyCode) !== -1) { camera.rotation.y += turn; camera.direction.copyFromFloats(0,0,0); }
       else if (this.keysDown.indexOf(keyCode)  !== -1) { camera.direction.copyFromFloats(0, 0, -speed); }
       if (camera.getScene().useRightHandedSystem) camera.direction.z *= -1;
       camera.getViewMatrix().invertToRef(camera._cameraTransformMatrix);
@@ -3923,11 +3942,12 @@ function updateIsoKeys() {
   } else if (tpMesh) {
     // Plain arrows / WASD move the CHARACTER, just like third person (iso camera stays put; mouse
     // still controls it). Cameras have no moveWithCollisions, so move the body + ground-follow manually.
-    const turn = tpCamera.angularSpeed;
+    const k = frameScale();
+    const turn = tpCamera.angularSpeed * k;
     if (keys['ArrowLeft']  || keys['KeyA']) tpCamera.rotation.y -= turn;
     if (keys['ArrowRight'] || keys['KeyD']) tpCamera.rotation.y += turn;
     const fwd = (keys['ArrowUp'] || keys['KeyW']) ? 1 : (keys['ArrowDown'] || keys['KeyS']) ? -1 : 0;
-    const spd = (fwd > 0 && shift) ? WALK_SPEED * SPRINT_MULT : WALK_SPEED;
+    const spd = ((fwd > 0 && shift) ? WALK_SPEED * SPRINT_MULT : WALK_SPEED) * k;
     if (fwd) {
       tpCamera.position.x += Math.sin(tpCamera.rotation.y) * fwd * spd;
       tpCamera.position.z += Math.cos(tpCamera.rotation.y) * fwd * spd;
@@ -4126,7 +4146,9 @@ engine.runRenderLoop(() => {
     // this loop body), so setting it here applies this frame.
     const movingForward = keys['ArrowUp'] || keys['KeyW'];
     const sprinting = movingForward && (keys['ShiftLeft'] || keys['ShiftRight']);
-    tpCamera.speed = sprinting ? WALK_SPEED * SPRINT_MULT : WALK_SPEED;
+    // Sprint needs Shift, which touch has no way to send, so on a phone this is always the walk.
+    tpCamera.speed = (sprinting ? WALK_SPEED * SPRINT_MULT : WALK_SPEED)
+                   * (IS_MOBILE ? MOBILE_WALK_MULT : 1);
 
     // Jump — single, ground-only. Own vertical velocity for the arc and disable
     // applyGravity so Babylon doesn't double-apply; the line-797 clamp is made
