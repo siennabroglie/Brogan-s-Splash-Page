@@ -7,7 +7,9 @@
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     html, body { width: 100%; height: 100%; overflow: hidden; background: black; }
-    canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; }
+    /* fixed, not absolute: once the phone view starts scrolling (see .reading below) an
+       absolute star map would slide off with the text. No-op on desktop, which never scrolls. */
+    canvas { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; }
     #overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 2; pointer-events: none; }
 
     /* ── Shared text styles ── */
@@ -83,6 +85,20 @@
       0%, 100% { opacity: 1; }
       50%       { opacity: 0; }
     }
+
+    /* ── Reading state (phone, after the whole text is up) ──────────────────────
+       The typewriter fakes scrolling by sliding #phone-content's `top` upward, which is a
+       one-way animation, not a scroll position — so a reader who wants to go back over the
+       text has nothing to drag. Once it is all on screen, hand the page to the browser:
+       #overlay joins normal flow so its height drives the body's (that is what gives the
+       document something to scroll), and #phone-content goes static, trading its absolute
+       left/width for the equivalent margin. The padding keeps today's 10% top inset and adds
+       room past the links. Clearing the transition matters — adjustPhoneScroll leaves an
+       inline `top 0.4s ease` behind that would otherwise animate against the handover.      */
+    html.reading, body.reading  { overflow-y: auto; height: auto; }
+    body.reading #overlay       { position: relative; height: auto; min-height: 100%; }
+    body.reading #phone-content { position: static; width: auto; margin: 0 5%;
+                                  padding: 10vh 0; transition: none; }
 
     /* ── Phone overrides ── */
     @media (max-width: 767px) {
@@ -526,8 +542,8 @@ function skipToEnd() {
     ph.textContent = bodyText;
     appendLinkLines(ph.parentNode);
     if (cp) cp.remove();
-    // keep scroll position correct
-    adjustPhoneScroll();
+    // The whole text is up — stop sliding it and let the page scroll instead.
+    enablePhoneScroll();
   } else {
     // Fill whichever column is active, hide cursor
     const t1 = document.getElementById('text1');
@@ -640,6 +656,18 @@ if (IS_PHONE) {
   const TOP_OFFSET = window.innerHeight * 0.10;
   phoneEl.style.top = TOP_OFFSET + 'px';
 
+  // Everything is on screen: swap the slide for a real scrollable document.
+  function enablePhoneScroll() {
+    phoneEl.style.transition = '';   // the slide is over — don't let it fight the handover
+    phoneEl.style.top = '';          // drop the JS offset; the browser owns position now
+    document.documentElement.classList.add('reading');
+    document.body.classList.add('reading');
+    // Land on the links, where the slide already left them — only now there is a way back up.
+    // Deferred a frame: the class change re-lays-out #phone-content from absolute to static,
+    // and scrollHeight is only right once that has settled.
+    requestAnimationFrame(() => window.scrollTo(0, document.documentElement.scrollHeight));
+  }
+
   function adjustPhoneScroll() {
     const maxBottom = window.innerHeight * 0.90;
     const bottom    = phoneEl.getBoundingClientRect().bottom;
@@ -659,6 +687,7 @@ if (IS_PHONE) {
       appendLinkLines(phoneEl);
       if (curPhEl) curPhEl.remove();
       finished = true;
+      enablePhoneScroll();   // same dead end as the tap path if we just stop here
       return;
     }
 
